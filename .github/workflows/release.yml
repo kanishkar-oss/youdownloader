@@ -78,6 +78,11 @@ jobs:
           { echo "### ${{ matrix.label }}: $([ -z "${status:-}" ] && echo passed || echo FAILED)"
             echo '```'; grep -E '^(==|ok:|FAIL|PASS|WARN|RESULT|All macOS)|Error|error:' ci_check.log | head -60
             echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          # Annotations show on the run page even to visitors who aren't signed in.
+          grep -E '^(FAIL|WARN) ' ci_check.log | head -5 | while IFS= read -r line; do
+            echo "::warning title=${{ matrix.label }} self-test::${line:0:300}"
+          done
+          [ -z "${status:-}" ] || echo "::error title=${{ matrix.label }} checks failed::$(grep -E '^FAIL|FAIL:' ci_check.log | head -3 | tr '\n' ' ' | cut -c1-400)"
           exit ${status:-0}
 
       - name: Install the Windows build the way the updater does, then self-test it
@@ -101,6 +106,9 @@ jobs:
           $verdict = if ($t.ExitCode -eq 0) { "passed" } else { "FAILED" }
           @("### windows: installed app self-test $verdict", '```') + (Get-Content selftest.txt | Select-String -Pattern '^(PASS|FAIL|WARN|RESULT)' | ForEach-Object { $_.Line }) + '```' |
             Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          # Annotations show on the run page even to visitors who aren't signed in.
+          Get-Content selftest.txt | Select-String -Pattern '^(FAIL|WARN) ' | Select-Object -First 5 |
+            ForEach-Object { $l = $_.Line; if ($l.Length -gt 300) { $l = $l.Substring(0, 300) }; Write-Output "::warning title=windows self-test::$l" }
           if ($t.ExitCode -ne 0) { throw "self-test failed" }
           Stop-Process -Name YouDownloader -Force -ErrorAction SilentlyContinue
 
