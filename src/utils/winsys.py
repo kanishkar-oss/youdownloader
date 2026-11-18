@@ -46,11 +46,15 @@ def acquire_single_instance() -> bool:
 def focus_existing_window(title: str = "YouDownloader") -> bool:
     """Bring an already-running instance's window to the front."""
     if _IS_MAC:
-        # A second copy run from source; the .app is single-instance via
-        # LaunchServices already. Activating by name is best effort.
+        # Reached when a source run and the .app overlap (the .app alone is
+        # single-instance via LaunchServices). Only activate the app if it's
+        # running, by bundle id: "tell application X" would otherwise launch it.
         try:
-            subprocess.Popen(["osascript", "-e", f'tell application "{title}" to activate'],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            from src.version import BUNDLE_ID
+            script = (f'if application id "{BUNDLE_ID}" is running then '
+                      f'tell application id "{BUNDLE_ID}" to activate')
+            subprocess.run(["/usr/bin/osascript", "-e", script], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=5)
             return True
         except Exception:
             return False

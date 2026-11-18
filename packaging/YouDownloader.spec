@@ -12,7 +12,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))
 sys.path.insert(0, ROOT)
-from src.version import APP_NAME, __version__  # noqa: E402
+from src.version import APP_NAME, BUNDLE_ID, __version__  # noqa: E402
 
 IS_MAC = sys.platform == "darwin"
 IS_WIN = sys.platform == "win32"
@@ -85,19 +85,40 @@ exe = EXE(
 
 coll = COLLECT(exe, a.binaries, a.datas, name=APP_NAME, upx=False)
 
+def _min_macos(binary_paths, floor=(11, 0)):
+    """Highest minimum-macOS of the bundled binaries (from otool's
+    LC_BUILD_VERSION / LC_VERSION_MIN_MACOSX), so Info.plist doesn't promise
+    support for a macOS the bundled ffmpeg/deno can't run on."""
+    import re
+    import subprocess
+    best = floor
+    for path in binary_paths:
+        try:
+            out = subprocess.run(["otool", "-l", path], capture_output=True, text=True, timeout=60).stdout
+        except (OSError, subprocess.SubprocessError):
+            continue
+        found = re.findall(r"minos (\d+)\.(\d+)", out)
+        found += re.findall(r"LC_VERSION_MIN_MACOSX\n.*\n\s*version (\d+)\.(\d+)", out)
+        for major, minor in found:
+            best = max(best, (int(major), int(minor)))
+    print(f"Minimum macOS for this build: {best[0]}.{best[1]}")
+    return f"{best[0]}.{best[1]}"
+
+
 if IS_MAC:
+    MIN_MACOS = _min_macos([src for _dest, src, kind in a.binaries if kind in ("BINARY", "EXTENSION")])
     app = BUNDLE(
         coll,
         name=f"{APP_NAME}.app",
         icon=os.path.join(ROOT, "assets", "youdownloader.icns"),
-        bundle_identifier="io.github.kanishkar-oss.youdownloader",
+        bundle_identifier=BUNDLE_ID,
         version=__version__,
         info_plist={
             "CFBundleName": APP_NAME,
             "CFBundleDisplayName": APP_NAME,
             "CFBundleShortVersionString": __version__,
             "CFBundleVersion": __version__,
-            "LSMinimumSystemVersion": "11.0",
+            "LSMinimumSystemVersion": MIN_MACOS,
             "NSHighResolutionCapable": True,
             # Let the dark title bar follow Tk's dark appearance.
             "NSRequiresAquaSystemAppearance": False,

@@ -42,13 +42,18 @@ def main() -> int:
         sys.path.insert(0, root)
 
     from src.utils import paths, winsys
-    os.chdir(paths.resource_root())
+    # Relative paths given on the command line mean "relative to where I ran it".
+    argv = [os.path.abspath(a) if i and sys.argv[i - 1] == "--self-test" else a
+            for i, a in enumerate(sys.argv)]
+    # Never run with the working directory inside the (signed, replaceable)
+    # app bundle: nothing may be written there.
+    os.chdir(os.path.expanduser("~") if paths.FROZEN else paths.resource_root())
     # Bundled ffmpeg / ffprobe / deno (packaged app), ~/.deno/bin, Homebrew.
     paths.setup_tool_path()
 
-    if "--self-test" in sys.argv:
+    if "--self-test" in argv:
         from src.selftest import run
-        return run(sys.argv)
+        return run(argv)
 
     if paths.IS_WINDOWS:
         try:
@@ -68,6 +73,12 @@ def main() -> int:
         from src.app import YouDownloaderApp
         app = YouDownloaderApp()
         app.mainloop()
+        if getattr(app, "exit_for_update", False):
+            # The installer / swap script is waiting for this process to end.
+            # State is saved; don't wait on any lingering worker threads.
+            import logging
+            logging.shutdown()
+            os._exit(0)
         return 0
     except Exception:
         details = traceback.format_exc()

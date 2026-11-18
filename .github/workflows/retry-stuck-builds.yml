@@ -1,0 +1,35 @@
+# GitHub sometimes can't find a free Mac for a job ("The job was not acquired
+# by Runner ... after multiple attempts"); the job is then cancelled and the
+# release isn't published. This re-runs just those jobs, a few minutes later,
+# up to 3 times. Real failures (tests, build errors) are never retried.
+name: Retry builds GitHub couldn't start
+
+on:
+  workflow_run:
+    workflows: ["Build & release"]
+    types: [completed]
+
+permissions:
+  actions: write
+
+jobs:
+  retry:
+    if: github.event.workflow_run.conclusion != 'success' && github.event.workflow_run.run_attempt < 4
+    runs-on: ubuntu-latest
+    steps:
+      - name: Re-run jobs that never got a runner
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          REPO: ${{ github.repository }}
+        run: |
+          failed=$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs" --jq '[.jobs[] | select(.conclusion == "failure")] | length')
+          # A job GitHub never started has no runner; one you cancelled yourself does.
+          stuck=$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs" --jq '[.jobs[] | select(.conclusion == "cancelled" and ((.runner_name // "") == ""))] | length')
+          echo "failed=$failed stuck=$stuck"
+          if [ "$failed" = "0" ] && [ "$stuck" != "0" ]; then
+            sleep 180
+            gh run rerun "$RUN_ID" --failed -R "$REPO"
+          else
+            echo "Nothing to retry (real failures need a fix, not a retry)."
+          fi

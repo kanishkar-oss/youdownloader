@@ -68,19 +68,31 @@ jobs:
       - name: Build
         run: python packaging/build.py
 
-      - name: Smoke-test the packaged app
-        shell: bash
-        run: |
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            exe="dist/YouDownloader/YouDownloader.exe"
-          else
-            exe="dist/YouDownloader.app/Contents/MacOS/YouDownloader"
-          fi
-          "$exe" --self-test selftest.txt || status=$?
-          cat selftest.txt || true
-          exit ${status:-0}
+      - name: Check the shipped Mac app (zip, dmg, self-test, update swap)
+        if: runner.os == 'macOS'
+        run: sh packaging/ci_check_mac.sh
 
-      - uses: actions/upload-artifact@v4
+      - name: Install the Windows build the way the updater does, then self-test it
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem dist/release/*-windows-setup.exe).FullName
+          # Same silent flags as the in-app updater. WaitForExit (not -Wait,
+          # which would also wait for the app the installer launches).
+          $p = Start-Process $setup -PassThru -ArgumentList '/SILENT','/SP-','/SUPPRESSMSGBOXES','/NORESTART','/CLOSEAPPLICATIONS',"/LOG=$PWD\install.log"
+          if (-not $p.WaitForExit(600000)) { throw "installer timed out" }
+          Get-Content install.log -Tail 5
+          if ($p.ExitCode -ne 0) { throw "installer exited $($p.ExitCode)" }
+          Start-Sleep -Seconds 5
+          if (-not (Get-Process YouDownloader -ErrorAction SilentlyContinue)) { throw "the app didn't start after installing" }
+          $exe = "$env:LOCALAPPDATA\Programs\YouDownloader\YouDownloader.exe"
+          $t = Start-Process $exe -PassThru -ArgumentList '--self-test',"$PWD\selftest.txt"
+          if (-not $t.WaitForExit(120000)) { throw "self-test timed out" }
+          Get-Content selftest.txt
+          if ($t.ExitCode -ne 0) { throw "self-test failed" }
+          Stop-Process -Name YouDownloader -Force -ErrorAction SilentlyContinue
+
+      - uses: actions/upload-artifact@v6
         with:
           name: YouDownloader-${{ matrix.label }}
           path: dist/release/*
@@ -96,7 +108,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true

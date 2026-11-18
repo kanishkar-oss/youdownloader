@@ -14,6 +14,11 @@ echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "usage: $0 X.Y.Z
 tag="v$version"
 [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ] || { echo "Releases are cut from main."; exit 1; }
 [ -z "$(git tag -l "$tag")" ] || { echo "Tag $tag already exists."; exit 1; }
+current=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' src/version.py)
+newest=$(printf '%s\n%s\n' "$current" "$version" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)
+if [ "$version" = "$current" ] || [ "$newest" != "$version" ]; then
+  echo "$version isn't newer than the current $current. Installed apps only update to a higher version."; exit 1
+fi
 git fetch origin main --quiet
 [ "$(git rev-list --count HEAD..origin/main)" = "0" ] || { echo "origin/main is ahead of you. Pull first."; exit 1; }
 
@@ -34,7 +39,7 @@ sed -i.bak "s/__version__ = \".*\"/__version__ = \"$version\"/" src/version.py &
 printf "\nRelease notes:\n%s\n\n" "$notes"
 git add -A
 git commit -m "Release $tag" --quiet
-git tag -a "$tag" -m "$notes"
+git tag -a "$tag" --cleanup=verbatim -m "$notes"
 git push origin main
 git push origin "$tag"
 

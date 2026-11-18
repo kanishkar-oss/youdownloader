@@ -100,16 +100,24 @@ isn't notarized by Apple yet, so the first launch is blocked:
    Security**, scroll down and click **Open Anyway**, or
 2. in Terminal run `xattr -dr com.apple.quarantine /Applications/YouDownloader.app`.
 
-macOS asks once for permission to save to your Downloads folder.
+macOS asks for permission to save to your Downloads folder (it may ask again
+after an update, because test builds aren't signed with a developer ID).
 
 ### Updates
 The app checks for a new version each time it opens and shows a banner when
 there is one. **Update** downloads it, checks its SHA-256, installs it and
-restarts the app; settings, queue and sign-in are kept. Turn the check off, or
-check by hand, in **Settings → About & updates**.
+restarts the app; settings, queue and sign-in are kept. It waits until no
+download is running. Turn the check off, or check by hand, in **Settings →
+About & updates**.
 
 On a Mac the app must be in a folder you can write to (Applications is fine)
-to update itself. If it can't, it offers the download page instead.
+to update itself; run from the disk image or somewhere read-only, it offers the
+download page instead. Before swapping, the Mac updater checks the new app's
+identity, version, signature and minimum macOS. The old version is kept as
+`YouDownloader.app.previous` until the new one has started, and is put back if
+the swap fails. If an update ever doesn't take, the next launch says so and
+offers the download page. Update logs: `~/Library/Logs/YouDownloader/update.log`
+(macOS), `%LOCALAPPDATA%\YouDownloader\logs\update.log` (Windows).
 
 ## Releasing updates (maintainer)
 
@@ -125,16 +133,24 @@ which installed copies pick up on their next launch. From your machine:
 `src/version.py`, commits, tags `v5.1.1` (the tag message becomes the release
 notes; without `-Notes` they're the commit messages since the last release)
 and pushes. The builds take about 15 minutes; follow them on the repo's
-**Actions** tab. Every build runs the unit tests and a smoke test of the packaged
-app (`YouDownloader --self-test report.txt`) before anything is published.
+**Actions** tab. Before anything is published, every build runs the unit tests
+and tests the files testers will download:
+- **Windows:** installs the setup .exe silently, with the updater's own flags,
+  then self-tests the installed app (`YouDownloader --self-test report.txt`).
+- **macOS:** checks the signature of the shipped .zip and .dmg, self-tests
+  the unzipped app, and runs the update swap script against a copy (a normal
+  update, the app still running, and no write permission).
 
 Every build installs the newest yt-dlp, so YouTube fixes reach testers
 through app updates. Cut a release every month or two even without code
 changes.
 
-Nothing is published unless all three builds succeed. If a Mac build fails with
-"The job was not acquired by Runner", GitHub had no Mac free; open the run and
-use **Re-run jobs → Re-run failed jobs**. The finished builds are reused.
+Nothing is published unless all three builds succeed. GitHub sometimes has no
+Apple Silicon Mac free ("The job was not acquired by Runner"); the
+`retry-stuck-builds.yml` workflow then re-runs just that job a few minutes later.
+If it still fails, open the run and use **Re-run jobs → Re-run failed jobs**.
+The finished builds are reused. Version numbers must go up: the scripts refuse
+anything that isn't newer than `src/version.py`.
 
 To get test builds without publishing, run the workflow by hand (Actions →
 Build & release → Run workflow) and download the artifacts from the run.

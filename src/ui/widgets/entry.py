@@ -43,7 +43,7 @@ class FieldEntry(customtkinter.CTkEntry):
         entry.focus_set()
         menu = PopupMenu(self, self._palette, min_width=150)
         menu.add("Cut", lambda: entry.event_generate("<<Cut>>"), "cut")
-        menu.add("Copy", lambda: entry.event_generate("<<Copy>>"), "open")
+        menu.add("Copy", lambda: entry.event_generate("<<Copy>>"), "copy")
         menu.add("Paste", lambda: (entry.event_generate("<<Paste>>"),
                                    entry.event_generate("<KeyRelease>")), "paste")
         menu.separator()

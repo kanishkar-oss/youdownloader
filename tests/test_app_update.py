@@ -76,5 +76,45 @@ class TestRateLimitFallback(unittest.TestCase):
             self.assertIsNone(u.check())
 
 
+class TestVerification(unittest.TestCase):
+    """An update is never installed without a checksum."""
+
+    def _api(self, assets):
+        data = {"tag_name": "v99.0.0", "body": "notes", "html_url": "https://example/rel", "assets": assets}
+
+        def get(url, **kw):
+            if url == u.LATEST_URL:
+                return _Resp(200, data=data)
+            if url.endswith("SHA256SUMS.txt"):
+                return _Resp(200, "d" * 64 + "  YouDownloader-99.0.0-windows-setup.exe\n")
+            raise AssertionError(url)
+        return get
+
+    def test_missing_digest_uses_sha256sums(self):
+        assets = [{"name": "YouDownloader-99.0.0-windows-setup.exe", "browser_download_url": "https://x/setup.exe",
+                   "size": 10},
+                  {"name": "SHA256SUMS.txt", "browser_download_url": "https://x/SHA256SUMS.txt"}]
+        with mock.patch("requests.get", side_effect=self._api(assets)),                 mock.patch.object(u, "asset_suffix", return_value="-windows-setup.exe"):
+            rel = u.check()
+        self.assertEqual(rel.sha256, "d" * 64)
+        self.assertEqual(rel.asset_url, "https://x/setup.exe")
+
+    def test_no_checksum_anywhere_means_no_self_install(self):
+        assets = [{"name": "YouDownloader-99.0.0-windows-setup.exe", "browser_download_url": "https://x/setup.exe"}]
+        with mock.patch("requests.get", side_effect=self._api(assets)),                 mock.patch.object(u, "asset_suffix", return_value="-windows-setup.exe"):
+            rel = u.check()
+        self.assertIsNone(rel.asset_url)
+
+    def test_download_refuses_without_checksum(self):
+        rel = u.Release(version="99.0.0", notes="", page_url="", asset_name="a.exe", asset_url="https://x/a.exe")
+        with self.assertRaises(u.UpdateError):
+            u.download(rel)
+
+    def test_source_checkout_cannot_self_install(self):
+        self.assertIsNotNone(u.install_blocker())  # tests run from source
+        with self.assertRaises(u.UpdateError):
+            u.prepare("whatever.exe", "99.0.0")
+
+
 if __name__ == "__main__":
     unittest.main()

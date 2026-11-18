@@ -56,10 +56,11 @@ SEGOE_GLYPHS = {
     "unlock": "\uE785",
     "sparkle": "\uE945",
     "open": "\uE8A7",
+    "copy": "\uE8C8",
     "update": "\uE895",
 }
 
-# Same names \u2192 Material Icons codepoints (from the font's .codepoints file).
+# Same names -> Material Icons codepoints (from the font's .codepoints file).
 MATERIAL_GLYPHS = {
     "settings": "\uE8B8",
     "more": "\uE5D3",
@@ -89,7 +90,8 @@ MATERIAL_GLYPHS = {
     "lock": "\uE897",
     "unlock": "\uE898",
     "sparkle": "\uE65F",
-    "open": "\uE14D",
+    "open": "\uE89E",
+    "copy": "\uE14D",
     "update": "\uE627",
 }
 

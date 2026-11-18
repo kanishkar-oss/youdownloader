@@ -51,6 +51,8 @@ class Config:
         # version whose banner the user dismissed (Settings can still install it).
         "auto_check_updates": True,
         "skipped_update_version": None,
+        # Set just before an update installs; the next launch checks it took.
+        "pending_update_version": None,
     }
 
     def __init__(self, config_dir: Optional[str] = None):

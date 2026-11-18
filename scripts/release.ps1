@@ -21,6 +21,9 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path -Parent $PSScriptRoot)
+# git prints UTF-8; without this Windows PowerShell decodes it with the OEM code
+# page and characters like — or → in commit messages end up garbled in the notes.
+[Console]::OutputEncoding = New-Object Text.UTF8Encoding $false
 
 function Invoke-Git {
     # Run git and stop the release if it fails.
@@ -35,6 +38,9 @@ if ($branch -ne 'main') { throw "Releases are cut from main (you're on '$branch'
 if (git tag -l $tag) { throw "Tag $tag already exists." }
 
 $current = (Select-String -Path src/version.py -Pattern '__version__ = "(.+)"').Matches[0].Groups[1].Value
+if ([version]$Version -le [version]$current) {
+    throw "$Version isn't newer than the current $current. Installed apps only update to a higher version."
+}
 Write-Host "Releasing $current -> $Version"
 
 Invoke-Git fetch origin main --quiet
@@ -72,7 +78,7 @@ Invoke-Git commit -m "Release $tag" --quiet
 # Notes go through a file: Windows PowerShell mangles quotes in native arguments.
 $notesFile = [IO.Path]::GetTempFileName()
 [IO.File]::WriteAllText($notesFile, $Notes, (New-Object Text.UTF8Encoding $false))
-Invoke-Git tag -a $tag -F $notesFile
+Invoke-Git tag -a $tag --cleanup=verbatim -F $notesFile
 Remove-Item $notesFile
 Invoke-Git push origin main
 Invoke-Git push origin $tag

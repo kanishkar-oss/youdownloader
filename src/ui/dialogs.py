@@ -290,19 +290,24 @@ class PasteListDialog:
 
 
 class UpdateDialog:
-    """A new app version: release notes, then download (with progress) and
-    hand the file to `on_install(path)`, which installs it and quits."""
+    """A new app version: release notes, then download (with progress), unpack
+    and check it off the UI thread, and hand the result to `on_install(prep)`,
+    which launches the installer and quits the app."""
 
     @staticmethod
-    def show(parent, release, on_install: Callable[[str], None]) -> None:
+    def show(parent, release, on_install: Callable) -> None:
         import threading
         from src.utils import app_update, winsys
         from src.version import __version__
 
+        blocker = app_update.install_blocker() if release.asset_url else None
+        can_install = bool(release.asset_url) and blocker is None
+
         d = _Dialog(parent, "Update available", width=460)
         d.header("update", f"YouDownloader {release.version} is available",
                  f"You have {__version__}. Updating takes a minute and restarts the app; "
-                 "your queue and settings are kept.")
+                 "your queue and settings are kept." if can_install else
+                 f"You have {__version__}. " + (blocker or "Download it from the release page."))
         if release.notes:
             customtkinter.CTkLabel(d.body, text=tracked("What's new"), font=TYPE.overline,
                                    text_color=P.text_disabled).pack(anchor="w", pady=(SPACING.lg, SPACING.xs))
@@ -321,14 +326,14 @@ class UpdateDialog:
 
         row = customtkinter.CTkFrame(d.top, fg_color="transparent")
         row.pack(fill="x", padx=SPACING.xl + 4, pady=(0, SPACING.xl))
-        can_install = app_update.can_self_install() and release.asset_url
         primary = PrimaryButton(row, P, text="Update now" if can_install else "Open download page",
                                 icon="download", height=HEIGHT.button_md, font=TYPE.button, width=150)
         primary.pack(side="right")
         secondary = SecondaryButton(row, P, text="Later")
         secondary.pack(side="right", padx=(0, SPACING.sm))
 
-        state = {"cancelled": False, "busy": False}
+        # phase: idle -> downloading -> installing (no way back once installing)
+        state = {"cancelled": False, "phase": "idle"}
 
         def alive() -> bool:
             try:
@@ -343,7 +348,7 @@ class UpdateDialog:
                 pass
 
         def fail(message: str):
-            state["busy"] = False
+            state["phase"] = "idle"
             status.configure(text=message, text_color=P.error)
             primary.configure(state="normal", text="Try again")
             secondary.configure(text="Close")
@@ -353,9 +358,9 @@ class UpdateDialog:
                 winsys.open_url(release.page_url)
                 d.close()
                 return
-            if state["busy"]:
+            if state["phase"] != "idle":
                 return
-            state.update(busy=True, cancelled=False)
+            state.update(phase="downloading", cancelled=False)
             primary.configure(state="disabled", text="Downloading…")
             secondary.configure(text="Cancel")
             status.configure(text="Downloading the update…", text_color=P.text_secondary)
@@ -369,29 +374,41 @@ class UpdateDialog:
                         release, on_progress=lambda f: on_ui(lambda: (
                             bar.set(f), status.configure(text=f"Downloading the update…  {int(f * 100)}%"))),
                         is_cancelled=lambda: state["cancelled"])
+                    if path is None:
+                        return  # cancelled; the dialog already closed
+                    on_ui(lambda: status.configure(text="Checking the update…"))
+                    prep = app_update.prepare(path, release.version)
                 except app_update.UpdateError as e:
                     on_ui(lambda msg=str(e): fail(msg))
                     return
-                if path is None:
-                    return  # cancelled; the dialog already closed
+                except Exception as e:  # never leave the dialog stuck on "Downloading…"
+                    on_ui(lambda msg=f"The update failed: {e}": fail(msg))
+                    return
+                if state["cancelled"]:
+                    app_update.discard(prep)
+                    return
 
                 def finish():
+                    state["phase"] = "installing"
                     status.configure(text="Installing… YouDownloader will restart.", text_color=P.text_secondary)
                     primary.configure(text="Installing…")
                     secondary.configure(state="disabled")
-                    d.top.after(400, lambda: (d.close(), on_install(path)))
+                    # On the root, not the dialog: closing the dialog must not cancel this.
+                    d.root.after(400, lambda: (d.close(), on_install(prep)))
                 on_ui(finish)
             threading.Thread(target=work, daemon=True).start()
 
         def later():
-            if state["busy"]:
+            if state["phase"] == "installing":
+                return  # too late to cancel; the app is about to restart
+            if state["phase"] == "downloading":
                 state["cancelled"] = True
             d.close()
 
         primary.configure(command=start)
         secondary.configure(command=later)
         d.on_primary = lambda: (start(), True)[1]
-        d.on_cancel = later
+        d.on_cancel = lambda: (later(), state["phase"] == "installing")[1]
         d.show()
 
 
@@ -665,17 +682,24 @@ class SettingsDialog:
             check_btn.configure(state="disabled", text="Checking…")
 
             def done(release, error):
+                settings_open = False
                 try:
-                    check_btn.configure(state="normal", text="Check for updates")
-                    if error:
-                        about_lbl.configure(text=error)
-                    elif release is None:
-                        about_lbl.configure(text=f"You're up to date ({__version__} is the latest).")
-                    else:
-                        d.close()
-                        parent.show_update(release)
+                    settings_open = bool(d.top.winfo_exists())
                 except Exception:
                     pass
+                if not settings_open:
+                    # Settings was closed while checking: still tell them.
+                    if release is not None:
+                        parent.show_update(release)
+                    return
+                check_btn.configure(state="normal", text="Check for updates")
+                if error:
+                    about_lbl.configure(text=error)
+                elif release is None:
+                    about_lbl.configure(text=f"You're up to date ({__version__} is the latest).")
+                else:
+                    d.close()
+                    parent.show_update(release)
             parent.check_for_app_update(manual=True, on_result=done)
 
         check_btn = SecondaryButton(right, P, text="Check for updates", icon="refresh", width=176,

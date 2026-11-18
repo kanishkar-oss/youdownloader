@@ -112,6 +112,15 @@ class YouDownloaderApp(customtkinter.CTk):
         width = self.config.get("window_width", 940)
         height = self.config.get("window_height", 900)
         x, y = self.config.get("window_x"), self.config.get("window_y")
+        try:  # keep it on screen (e.g. a 13" Mac, or a monitor that's gone)
+            scale = customtkinter.ScalingTracker.get_window_scaling(self)
+            sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+            width = max(760, min(int(width), int(sw / scale) - 40))
+            height = max(720, min(int(height), int(sh / scale) - 100))
+            if x is not None and y is not None and not (-50 < int(x) < sw - 100 and 0 <= int(y) < sh - 100):
+                x = y = None
+        except Exception:
+            pass
         self.geometry(f"{width}x{height}+{x}+{y}" if x is not None and y is not None else f"{width}x{height}")
         if self.config.get("window_maximized"):
             self.after(0, lambda: self.state("zoomed"))
@@ -153,6 +162,8 @@ class YouDownloaderApp(customtkinter.CTk):
             self.after(600, self._prompt_js_consent)
         if paths.IS_MAC:
             self._setup_mac_app()
+        self.exit_for_update = False
+        self.after(1500, self._after_start_update_housekeeping)
         if app_update.can_self_install() and self.config.get("auto_check_updates", True):
             self.after(4000, lambda: self.check_for_app_update(manual=False))
 
@@ -169,6 +180,29 @@ class YouDownloaderApp(customtkinter.CTk):
             self.logger.debug(f"macOS app hooks unavailable: {e}")
 
     # ===== app updates ======================================================
+
+    def _after_start_update_housekeeping(self) -> None:
+        """Runs once the window is up: report an update that didn't take,
+        drop the kept-back previous version (macOS) and old downloads."""
+        pending = self.config.get("pending_update_version")
+        if pending:
+            self.config.set("pending_update_version", None)
+            if app_update.is_newer(pending):
+                self.logger.error(f"The update to {pending} didn't install (still {__version__}); "
+                                  f"see {app_update.update_log_path()}")
+                ConfirmDialog.show(
+                    self, "The update didn't install",
+                    f"YouDownloader {pending} couldn't be installed automatically, so you're still on "
+                    f"{__version__}. You can download it from the release page instead.\n\n"
+                    f"Details: {app_update.update_log_path()}",
+                    lambda yes: yes and winsys.open_url(app_update.RELEASES_PAGE),
+                    confirm_text="Open download page", cancel_text="Not now")
+            else:
+                self.logger.info(f"Updated to {__version__}")
+        if paths.FROZEN:
+            if paths.IS_MAC:
+                app_update.cleanup_previous_bundle()
+            app_update.cleanup_stale_downloads()
 
     def check_for_app_update(self, manual: bool = False,
                              on_result: Optional[Callable] = None) -> None:
@@ -191,6 +225,8 @@ class YouDownloaderApp(customtkinter.CTk):
     def _on_update_checked(self, release, error, manual, on_result) -> None:
         if error:
             self.logger.info(f"Update check: {error}")
+        if release is not None:
+            self._pending_release = release
         if on_result:
             on_result(release, error)
             return
@@ -200,7 +236,6 @@ class YouDownloaderApp(customtkinter.CTk):
             elif manual:
                 ErrorDialog.show(self, "Couldn't check for updates", error)
             return
-        self._pending_release = release
         if manual:
             self.show_update(release)
         elif self.config.get("skipped_update_version") != release.version:
@@ -222,34 +257,40 @@ class YouDownloaderApp(customtkinter.CTk):
             detail=(first_line[:90] + ("…" if len(first_line) > 90 else "")) or f"You have {__version__}.",
             action_text="Update", on_action=lambda: self.show_update(rel),
             on_dismiss=lambda: self.config.set("skipped_update_version", rel.version))
-        children = self._banner_parent.winfo_children()
-        before = next((w for w in children if w is not self._update_banner), None)
-        self._update_banner.pack(fill="x", pady=(0, SPACING.md), **({"before": before} if before else {}))
+        # Just above the link bar, which lives exactly as long as this banner:
+        # CustomTkinter re-runs pack(**same kwargs) on DPI changes, so `before`
+        # must never point at a widget that can be destroyed first (e.g. a
+        # dismissed banner), or the rescale fails and leaves the window faded.
+        self._update_banner.pack(fill="x", pady=(0, SPACING.md), before=self._url_row)
 
     def show_update(self, release) -> None:
-        def install(path: str) -> None:
-            try:
-                app_update.install(path)
-            except app_update.UpdateError as e:
-                ErrorDialog.show(self, "Couldn't install the update", str(e))
+        def install(prep) -> None:
+            if self.is_downloading or self.queue.is_running():
+                # A download started while the update was downloading.
+                app_update.discard(prep)
+                InfoDialog.show(self, "Update postponed", "A download started in the meantime. Update again "
+                                "once it has finished.")
                 return
+            try:
+                app_update.launch(prep)
             except Exception as e:
                 self.logger.error(f"Update install failed: {e}", exc_info=True)
+                app_update.discard(prep)
                 ErrorDialog.show(self, "Couldn't install the update", str(e))
                 return
             self.logger.info(f"Installing update {release.version}; quitting")
+            self.config.set("pending_update_version", release.version)
+            self.exit_for_update = True  # main.py exits the process right after mainloop
             self.on_closing()
 
-        def go():
-            UpdateDialog.show(self, release, install)
-
         if self.is_downloading or self.queue.is_running():
-            ConfirmDialog.show(self, "Stop downloads and update?",
-                               "A download is still running. Updating restarts YouDownloader and "
-                               "stops it (queued items stay in the queue).",
-                               lambda yes: yes and go(), confirm_text="Continue")
-        else:
-            go()
+            # Quitting mid-download would leave ffmpeg running (and on Windows
+            # holding files the installer must replace), so don't.
+            InfoDialog.show(self, "Finish your downloads first",
+                            f"YouDownloader {release.version} is ready to install, but a download is "
+                            "still running. Let it finish (or press Stop), then click Update again.")
+            return
+        UpdateDialog.show(self, release, install)
 
     # ===== settings / integration ============================================
 
@@ -745,6 +786,7 @@ class YouDownloaderApp(customtkinter.CTk):
         if not ok:
             ErrorDialog.show(self, "Can't save there", err or "Choose another folder.")
             return None
+        output_path = os.path.abspath(os.path.expanduser(output_path))
         if not self._check_ffmpeg_for(self.current_format):
             return None
         clip = self._read_clip()
@@ -819,6 +861,7 @@ class YouDownloaderApp(customtkinter.CTk):
         if not ok:
             ErrorDialog.show(self, "Can't save there", err or "Choose another folder.")
             return
+        output_path = os.path.abspath(os.path.expanduser(output_path))
         if not self._check_ffmpeg_for(self.current_format):
             return
 
