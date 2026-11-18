@@ -186,8 +186,9 @@ If the app fails to start, a message box shows the error and it's written to
 the log (see Logging).
 
 ### Full quality: sign in with cookies.txt
-YouTube only serves 720p and above to signed-in sessions; without sign-in most
-videos are capped at ~360p. Chrome and Edge encrypt their cookies, so yt-dlp
+Signing in is optional. Most videos download in full quality without it, but
+YouTube sometimes limits a video (and clips, which are cut from the stream
+directly) to ~360p unless the session is signed in; how often varies by network. Chrome and Edge encrypt their cookies, so yt-dlp
 can't read them directly. Export them instead:
 
 1. Install the **Get cookies.txt LOCALLY** extension in Chrome or Edge.

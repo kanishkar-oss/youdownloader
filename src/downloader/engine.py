@@ -399,7 +399,19 @@ class DownloadEngine:
                     use_aria2c = False
                     continue
 
-                if self._is_sabr_block(msg):
+                # Clips are cut by ffmpeg reading the stream URLs itself. When
+                # YouTube refuses those (403, typically without sign-in) yt-dlp
+                # only reports "ffmpeg exited with code N", so treat an ffmpeg
+                # failure on a clip like the 403 it usually is.
+                clip_ffmpeg_failed = bool(clip) and "ffmpeg exited with code" in msg.lower()
+                if clip_ffmpeg_failed and attempt == _PROGRESSIVE:
+                    self.logger.error(f"Clip download failed: {msg}")
+                    raise Exception(
+                        "Couldn't download this clip. YouTube may need you to sign in for it: "
+                        "add a cookies.txt in Settings, or download the whole video instead."
+                    )
+
+                if self._is_sabr_block(msg) or clip_ffmpeg_failed:
                     if attempt != _PROGRESSIVE:
                         # YouTube is gating the high-quality (DASH) formats behind
                         # SABR / bot-check auth, so their URLs 403. The progressive

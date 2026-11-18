@@ -277,7 +277,7 @@ class YouDownloaderApp(customtkinter.CTk):
         if self.cookie_file and info["ok"] and info["signed_in"]:
             self.header.set_chip("Signed in  ·  full quality", self.palette.success)
         else:
-            self.header.set_chip("Not signed in  ·  up to 360p", self.palette.warning)
+            self.header.set_chip("Not signed in  ·  HD may be limited", self.palette.warning)
 
     def _effects(self) -> bool:
         return bool(self.config.get("visual_effects_enabled", True))

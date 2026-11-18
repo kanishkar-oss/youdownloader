@@ -519,7 +519,7 @@ class SettingsDialog:
             signed_in = bool(parent.cookie_file and info["ok"] and info["signed_in"])
             if not parent.cookie_file:
                 dot.set_color(P.text_disabled)
-                status.configure(text="Not signed in  ·  most videos capped at 360p")
+                status.configure(text="Not signed in  ·  some videos may be limited to 360p")
             elif signed_in:
                 dot.set_color(P.success)
                 exp = info["expires"]
@@ -542,7 +542,8 @@ class SettingsDialog:
                                         "want to use a different Google account.")
                 choose_btn.configure(text="Replace cookies.txt…")
             else:
-                help_lbl.configure(text="YouTube serves 720p and above only to signed-in sessions. On "
+                help_lbl.configure(text="Most videos download in full quality without signing in, but YouTube "
+                                        "limits some (and HD clips) to signed-in sessions. On "
                                         "youtube.com (signed in), use the \u201cGet cookies.txt LOCALLY\u201d "
                                         "browser extension to Export a cookies file, then choose it here. "
                                         "It's copied to a private app folder (not synced by OneDrive or "
@@ -590,8 +591,8 @@ class SettingsDialog:
                     pass
                 refresh_cookie_status()
             ConfirmDialog.show(d.top, "Remove sign-in?",
-                               "The imported cookies.txt will be deleted. Most videos will be limited "
-                               "to 360p until you choose a new one.", confirmed,
+                               "The imported cookies.txt will be deleted. Some videos (and HD clips) may "
+                               "be limited to 360p until you choose a new one.", confirmed,
                                confirm_text="Remove", danger=True)
 
         choose_btn.configure(command=choose_cookies)
