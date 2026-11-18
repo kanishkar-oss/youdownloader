@@ -132,6 +132,10 @@ Every build installs the newest yt-dlp, so YouTube fixes reach testers
 through app updates. Cut a release every month or two even without code
 changes.
 
+Nothing is published unless all three builds succeed. If a Mac build fails with
+"The job was not acquired by Runner", GitHub had no Mac free; open the run and
+use **Re-run jobs → Re-run failed jobs**. The finished builds are reused.
+
 To get test builds without publishing, run the workflow by hand (Actions →
 Build & release → Run workflow) and download the artifacts from the run.
 
