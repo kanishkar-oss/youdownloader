@@ -84,8 +84,8 @@ FFmpeg and Deno come built in; there's nothing else to install.
 | System | File |
 | --- | --- |
 | Windows 10 / 11 (64-bit) | `YouDownloader-<version>-windows-setup.exe` |
-| Mac with Apple Silicon (M1 and newer) | `YouDownloader-<version>-mac-apple-silicon.dmg` |
-| Mac with an Intel chip | `YouDownloader-<version>-mac-intel.dmg` |
+| Mac with Apple Silicon (M1 and newer), macOS 12+ | `YouDownloader-<version>-mac-apple-silicon.dmg` |
+| Mac with an Intel chip, macOS 12+ | `YouDownloader-<version>-mac-intel.dmg` |
 
 Not sure which Mac you have? Apple menu → About This Mac → "Chip" (Apple M…) or
 "Processor" (Intel).
