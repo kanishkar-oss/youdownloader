@@ -60,6 +60,23 @@ except Exception:  # pragma: no cover - missing or broken install
     _DnDMixin = object
 
 
+def drop_types(tkdnd_version: str, is_mac: bool = None) -> tuple:
+    """Drag types to accept. Browsers differ in what a dragged link carries:
+    Chrome adds plain text, others (Dia, Arc...) may offer only a URL or an
+    HTML link, so on macOS accept every type and pick the link out of what
+    arrives. Only with tkdnd 2.10+: the tkdnd 2.9 build Intel Macs get is kept
+    to text + files, which is known to work there."""
+    from src.utils import paths
+    is_mac = paths.IS_MAC if is_mac is None else is_mac
+    try:
+        major, minor = (int(x) for x in str(tkdnd_version).split(".")[:2])
+    except ValueError:
+        major, minor = 0, 0
+    if is_mac and (major, minor) >= (2, 10):
+        return (DND_ALL,)
+    return (DND_TEXT, DND_FILES)
+
+
 def links_from_drop(data: str, splitlist=None) -> list:
     """YouTube-looking links in dropped data: plain text / URLs, or dropped
     .url (Windows) / .webloc (macOS) link files."""
@@ -103,6 +120,15 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
 
     def __init__(self):
         super().__init__()
+        if paths.IS_MAC:
+            # youdownloader:// links arrive as an Apple Event. Install the handler
+            # the moment Tk exists, so a link that launched the app isn't missed;
+            # it's queued and loaded once the window is ready (_check_link_inbox).
+            try:
+                from src.utils import links as _links
+                self.createcommand("::tk::mac::LaunchURL", lambda url, *a: _links.post(str(url)))
+            except Exception as e:
+                logger.debug(f"LaunchURL handler unavailable: {e}")
         customtkinter.set_appearance_mode("dark")
         self.font_family = init_fonts(self)
 
@@ -226,9 +252,6 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
             self.createcommand("tk::mac::Quit", self.on_closing)
             self.createcommand("tk::mac::ShowPreferences", self._open_settings)
             self.createcommand("tk::mac::ReopenApplication", lambda *a: (self.deiconify(), self.lift()))
-            # youdownloader:// links (Info.plist CFBundleURLTypes) arrive as an
-            # Apple Event, also when the app is already open.
-            self.createcommand("::tk::mac::LaunchURL", lambda url, *a: self.handle_app_link(str(url)))
         except Exception as e:
             self.logger.debug(f"macOS app hooks unavailable: {e}")
 
@@ -518,17 +541,8 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
         if TkinterDnD is None:
             return
         try:
-            TkinterDnD.require(self)
-            # Browsers differ in what a dragged link carries: Chrome adds plain
-            # text, but others (Dia, Arc, Safari tabs...) may offer only a URL
-            # or an HTML link. On macOS accept every type and pick the link out
-            # of whatever arrives; fall back to text + files if that's refused.
-            try:
-                if not paths.IS_MAC:
-                    raise RuntimeError("explicit types on Windows")
-                self.drop_target_register(DND_ALL)
-            except Exception:
-                self.drop_target_register(DND_TEXT, DND_FILES)
+            version = TkinterDnD.require(self)
+            self.drop_target_register(*drop_types(version))
             self.dnd_bind("<<DropEnter>>", self._on_drop_enter)
             self.dnd_bind("<<DropLeave>>", self._on_drop_leave)
             self.dnd_bind("<<Drop>>", self._on_drop)

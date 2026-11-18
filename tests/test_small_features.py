@@ -48,6 +48,21 @@ class TestDroppedLinks(unittest.TestCase):
         self.assertEqual(links_from_drop("just some words"), [])
 
 
+class TestDropTypes(unittest.TestCase):
+    def test_mac_with_new_tkdnd_accepts_everything(self):
+        from src.app import drop_types, DND_ALL
+        self.assertEqual(drop_types("2.10.3", is_mac=True), (DND_ALL,))
+
+    def test_intel_mac_tkdnd_29_keeps_text_and_files(self):
+        from src.app import drop_types, DND_TEXT, DND_FILES
+        self.assertEqual(drop_types("2.9.4", is_mac=True), (DND_TEXT, DND_FILES))
+
+    def test_windows_keeps_text_and_files(self):
+        from src.app import drop_types, DND_TEXT, DND_FILES
+        self.assertEqual(drop_types("2.10.3", is_mac=False), (DND_TEXT, DND_FILES))
+        self.assertEqual(drop_types("weird", is_mac=True), (DND_TEXT, DND_FILES))
+
+
 class TestDiagnostics(unittest.TestCase):
     def test_home_folder_is_redacted(self):
         home = os.path.expanduser("~")

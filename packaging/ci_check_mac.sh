@@ -8,33 +8,43 @@
 #      the old one as .previous, refuses while the app is still running, and
 #      leaves the install untouched when it can't move it
 set -eu
+# Say where it stopped if any command fails (CI turns FAIL lines into public annotations).
+stage="start"
+section() { stage="$1"; echo "== $1"; }
+trap 'rc=$?; [ "$rc" -eq 0 ] || echo "FAIL ci_check_mac.sh stopped during: $stage (exit $rc)"' EXIT
 cd "$(dirname "$0")/.."
 zip=$(ls dist/release/*-mac-*.zip)
 dmg=$(ls dist/release/*-mac-*.dmg)
 t=$(mktemp -d)
-echo "== unpack $zip"
+section "unpack $zip"
 ditto -x -k "$zip" "$t/unzipped"
 app="$t/unzipped/YouDownloader.app"
 codesign --verify --deep --strict --verbose=2 "$app"
 
-echo "== mount $dmg"
+section "mount $dmg"
 mnt="$t/mnt"; mkdir "$mnt"
 hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "$dmg" >/dev/null
 codesign --verify --deep --strict "$mnt/YouDownloader.app"
 [ -L "$mnt/Applications" ] || { echo "dmg has no Applications link"; exit 1; }
 hdiutil detach "$mnt" >/dev/null
 
-echo "== self-test of the shipped app"
-"$app/Contents/MacOS/YouDownloader" --self-test "$t/selftest.txt" || { cat "$t/selftest.txt"; exit 1; }
+section "self-test of the shipped app"
+"$app/Contents/MacOS/YouDownloader" --self-test "$t/selftest.txt" || {
+  code=$?
+  cat "$t/selftest.txt" 2>/dev/null
+  # One line CI turns into a public annotation: which check failed or crashed.
+  echo "FAIL self-test exited $code: $(grep -E '^(FAIL|CRASHED)' "$t/selftest.txt" 2>/dev/null | head -2 | tr '\n' ' ')"
+  exit 1
+}
 cat "$t/selftest.txt"
 
-echo "== minimum macOS"
+section "minimum macOS"
 /usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app/Contents/Info.plist"
 for b in "$app"/Contents/Frameworks/bin/*; do
   printf '%s: ' "$(basename "$b")"; otool -l "$b" | awk '/minos/ {print $2; exit}'
 done
 
-echo "== youdownloader:// links"
+section "youdownloader:// links"
 /usr/libexec/PlistBuddy -c 'Print :CFBundleURLTypes:0:CFBundleURLSchemes:0' "$app/Contents/Info.plist" | grep -qx youdownloader \
   || { echo "FAIL: Info.plist doesn't claim youdownloader://"; exit 1; }
 echo "ok: Info.plist claims youdownloader://"
@@ -53,7 +63,7 @@ pkill -f "YouDownloader.app/Contents/MacOS/YouDownloader" 2>/dev/null || true
 if [ -n "$got" ]; then echo "ok: a youdownloader:// link reached the app"
 else echo "WARN link: the app didn't log the youdownloader:// link (CI LaunchServices, or Tk lacks LaunchURL)"; tail -5 "$LOG" 2>/dev/null || true; fi
 
-echo "== update swap script"
+section "update swap script"
 python -c "import sys; sys.path.insert(0, '.'); from src.utils.app_update import MAC_SWAP_SCRIPT; print(MAC_SWAP_SCRIPT)" > "$t/swap.sh"
 export YD_UPDATE_NO_RELAUNCH=1
 dead_pid() { sh -c 'echo $$' ; }   # a process that has already exited

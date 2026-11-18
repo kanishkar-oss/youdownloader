@@ -21,16 +21,24 @@ def run(argv) -> int:
     url = argv[argv.index("--download") + 1] if "--download" in argv else None
     lines, ok = [], True
 
+    def save(extra=None):
+        """Write the report so far, so a crash still shows how far it got."""
+        if out_path:
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines + ([extra] if extra else [])) + "\n")
+
     def check(name, fn, required=True):
         """required=False: a nice-to-have (the app works without it); its
         failure is reported as WARN and doesn't fail the self-test."""
         nonlocal ok
+        save(f"CRASHED during {name} (the process died before finishing it)")
         try:
             lines.append(f"PASS {name}: {fn()}")
         except Exception as e:
             if required:
                 ok = False
             lines.append(f"{'FAIL' if required else 'WARN'} {name}: {e}\n{traceback.format_exc()}")
+        save()
 
     from src.utils import paths
     from src.version import __version__
@@ -148,9 +156,11 @@ def run(argv) -> int:
         try:
             dnd = TkinterDnD.require(root)
             frame = customtkinter.CTkFrame(root)
-            # Same registration as the app: every type on macOS.
-            types = "all types" if paths.IS_MAC else "text + files"
-            frame.drop_target_register(*([DND_ALL] if paths.IS_MAC else [DND_TEXT, DND_FILES]))
+            # Same registration as the app (every type on macOS with tkdnd 2.10+).
+            from src.app import drop_types
+            types = drop_types(dnd)
+            frame.drop_target_register(*types)
+            types = "all types" if types == (DND_ALL,) else "text + files"
             root.update()
         finally:
             root.destroy()
