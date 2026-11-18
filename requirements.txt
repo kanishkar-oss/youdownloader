@@ -1,0 +1,8 @@
+customtkinter>=5.2.0,<6
+# [default] bundles yt-dlp-ejs (the local JS challenge solver) and yt-dlp's
+# recommended extras. No upper bound on purpose: YouTube changes often and old
+# yt-dlp releases stop working — keep it current with
+#   .venv\Scripts\python -m pip install -U "yt-dlp[default]"
+yt-dlp[default]>=2026.10.26
+Pillow>=10.0.0,<12
+requests>=2.31.0,<3

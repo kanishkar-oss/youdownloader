@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Build output
+build/
+dist/
+
+# Personal state: settings, queue and logs (never commit these)
+config/
+logs/
+*.log
+
+# cookies.txt holds live session tokens
+*cookies*.txt
+
+# Editor / tool state
+.cursor/
+.claude/settings.local.json
+.DS_Store
+Thumbs.db
+.vscode/settings.json
