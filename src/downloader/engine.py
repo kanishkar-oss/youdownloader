@@ -9,7 +9,7 @@ from src.utils.logger import get_logger
 from urllib.parse import urlparse
 
 from src.utils.validators import validate_youtube_url, format_timestamp
-from src.downloader.formats import FormatManager, VIDEO_MOV, VIDEO_MP4, AUDIO_WAV
+from src.downloader.formats import FormatManager, VIDEO_MOV, VIDEO_MP4, AUDIO_M4A, AUDIO_WAV
 from src.downloader.convert import ConversionCancelled, ConversionError, to_quicktime_mov
 from src.utils.constants import (
     REMOTE_COMPONENTS_SPEC,
@@ -288,6 +288,9 @@ class DownloadEngine:
             postprocessors.append({'key': 'FFmpegExtractAudio', 'preferredcodec': 'wav'})
             pcm_args = ['-c:a', codec] + (['-ar', str(rate)] if rate else [])
             ydl_opts['postprocessor_args'] = {'extractaudio+ffmpeg_o': pcm_args}
+        elif mode == AUDIO_M4A:
+            # AAC is remuxed into .m4a untouched; only non-AAC audio is encoded.
+            postprocessors.append({'key': 'FFmpegExtractAudio', 'preferredcodec': 'm4a'})
         else:  # MP3
             postprocessors.append({
                 'key': 'FFmpegExtractAudio',

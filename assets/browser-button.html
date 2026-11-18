@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YouDownloader browser button</title>
+<style>
+  :root {
+    --bg: #05060B; --card: #0D1019; --raised: #151927; --line: #232839;
+    --fg: #EDEFF7; --muted: #9197AD; --accent: #8F82FF; --fill: #7B6CF6; --soft: #1A1736;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #F6F6FB; --card: #FFFFFF; --raised: #EEEDF8; --line: #DCDBEA;
+            --fg: #14152B; --muted: #545A73; --accent: #5B4BE0; --fill: #6556DE; --soft: #ECE9FF;
+            color-scheme: light; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 15px/1.6 -apple-system, "Segoe UI Variable Text", "Segoe UI", Inter, system-ui, sans-serif;
+         padding: 40px max(16px, env(safe-area-inset-left, 0px)) 56px max(16px, env(safe-area-inset-right, 0px)); }
+  main { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+  h1 { font-size: 28px; line-height: 1.2; margin: 0; letter-spacing: -0.01em; }
+  h2 { font-size: 16px; margin: 0; }
+  p { margin: 0; }
+  .muted { color: var(--muted); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 22px;
+          display: flex; flex-direction: column; gap: 12px; }
+  .drag-zone { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .button { display: inline-flex; align-items: center; gap: 8px; background: var(--fill); color: #fff;
+            text-decoration: none; font-weight: 600; padding: 12px 18px; border-radius: 10px; cursor: grab; }
+  .button:active { cursor: grabbing; }
+  .arrow { color: var(--muted); font-size: 14px; }
+  ol { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; }
+  kbd { font: 12px ui-monospace, Menlo, Consolas, monospace; background: var(--raised); border: 1px solid var(--line);
+        border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; }
+  .copy { display: flex; gap: 8px; align-items: center; background: var(--raised); border: 1px solid var(--line);
+          border-radius: 10px; padding: 8px 8px 8px 12px; }
+  .copy code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap;
+               font: 12.5px ui-monospace, Menlo, Consolas, monospace; }
+  .copy button { font: inherit; font-size: 13px; color: var(--fg); background: var(--card); border: 1px solid var(--line);
+                 border-radius: 7px; padding: 5px 12px; cursor: pointer; }
+  .note { background: var(--soft); border-radius: 12px; padding: 14px 16px; }
+  table { border-collapse: collapse; width: 100%; }
+  td { padding: 6px 0; vertical-align: top; border-bottom: 1px solid var(--line); }
+  tr:last-child td { border-bottom: 0; }
+  td:first-child { width: 42%; font-weight: 600; padding-right: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Send to YouDownloader</h1>
+  <p class="muted">Add this button to your browser's bookmarks bar. On any YouTube video, click it and the video opens in YouDownloader, ready to download. It works in every browser, and you don't need to copy or drag the link.</p>
+
+  <section class="card">
+    <h2>1. Drag this button onto your bookmarks bar</h2>
+    <div class="drag-zone">
+      <a class="button" id="bookmarklet" href="javascript:void(location.href='youdownloader://open?url='+encodeURIComponent(location.href))"
+         title="Drag me to your bookmarks bar">⇩ Send to YouDownloader</a>
+      <span class="arrow">← drag it, don't click it</span>
+    </div>
+    <p class="muted">Don't see a bookmarks bar? Show it first:</p>
+    <table>
+      <tr><td>Chrome, Edge, Brave, Arc, Dia</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>, or <kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> on a Mac</td></tr>
+      <tr><td>Safari</td><td>View → Show Favorites Bar (<kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>), then drag the button there</td></tr>
+      <tr><td>Firefox</td><td>View → Toolbars → Bookmarks Toolbar</td></tr>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>2. Use it</h2>
+    <ol>
+      <li>Open a YouTube video in your browser.</li>
+      <li>Click <b>Send to YouDownloader</b> in your bookmarks bar.</li>
+      <li>The first time, your browser asks whether to open YouDownloader. Allow it, and tick "Always allow" if it offers that.</li>
+      <li>YouDownloader comes to the front with the video loaded. Pick a format and click Download.</li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h2>If dragging doesn't work</h2>
+    <p class="muted">Add a bookmark by hand: right-click the bookmarks bar → <b>Add page</b> / <b>Add bookmark</b>, name it <b>Send to YouDownloader</b>, and paste this as its address (URL):</p>
+    <div class="copy"><code id="code"></code><button type="button" id="copy">Copy</button></div>
+    <div class="note"><p>The button only sends the page's address to YouDownloader on this computer. Nothing goes to any other website.</p></div>
+  </section>
+</main>
+<script>
+  var code = document.getElementById("bookmarklet").getAttribute("href");
+  var codeEl = document.getElementById("code");
+  codeEl.textContent = code;
+  document.getElementById("bookmarklet").addEventListener("click", function (e) {
+    e.preventDefault();
+    alert("Drag this button onto your bookmarks bar instead of clicking it. Then click it on a YouTube video.");
+  });
+  document.getElementById("copy").addEventListener("click", function () {
+    var btn = this;
+    function selectIt() {
+      var r = document.createRange(); r.selectNodeContents(codeEl);
+      var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+      btn.textContent = "Selected: press Ctrl/⌘+C";
+    }
+    try {
+      navigator.clipboard.writeText(code).then(function () { btn.textContent = "Copied"; }, selectIt);
+    } catch (e) { selectIt(); }
+  });
+</script>
+</body>
+</html>

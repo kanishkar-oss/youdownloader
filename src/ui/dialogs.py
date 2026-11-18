@@ -499,6 +499,21 @@ class SettingsDialog:
             parent.config.set("subtitle_language", lang.get().strip() or "en")
             parent.apply_download_settings()
         lang.bind("<KeyRelease>", save_lang)  # save as you type
+        divider(c)
+        from src.utils import paths as _paths
+        right, _ = row(c, "Browser button",
+                       "A bookmark that sends the YouTube video you're watching straight here, in any browser."
+                       + ("" if _paths.FROZEN else " (Works in the installed app.)"))
+
+        def setup_browser_button():
+            page = _paths.resource("assets", "browser-button.html")
+            try:
+                from src.utils import winsys
+                winsys.open_path(page)
+            except Exception as e:
+                ErrorDialog.show(d.top, "Couldn't open the setup page", str(e))
+        SecondaryButton(right, P, text="Set up", icon="open", width=96, height=HEIGHT.button_sm,
+                        command=setup_browser_button).pack()
 
         # --- YouTube sign-in ---
         c = card("YouTube sign-in")

@@ -110,6 +110,18 @@ jobs:
           Get-Content selftest.txt | Select-String -Pattern '^(FAIL|WARN) ' | Select-Object -First 5 |
             ForEach-Object { $l = $_.Line; if ($l.Length -gt 300) { $l = $l.Substring(0, 300) }; Write-Output "::warning title=windows self-test::$l" }
           if ($t.ExitCode -ne 0) { throw "self-test failed" }
+          # Browser button: the installer registered youdownloader://, and opening such a
+          # link hands it to the already-running app.
+          $cmd = (Get-ItemProperty 'HKCU:\Software\Classes\youdownloader\shell\open\command').'(default)'
+          if ($cmd -notlike '*YouDownloader.exe*') { throw "youdownloader:// isn't registered: $cmd" }
+          Start-Process 'youdownloader://open?url=https%3A%2F%2Fyoutu.be%2FjNQXAC9IVRw'
+          Start-Sleep -Seconds 8
+          $log = Get-Content "$env:LOCALAPPDATA\YouDownloader\logs\youdownloader.log" -Tail 80
+          if (-not ($log -match 'Link from the browser button: https://youtu.be/jNQXAC9IVRw')) {
+            $log | Select-Object -Last 15
+            throw "the running app didn't receive the youdownloader:// link"
+          }
+          Write-Output "youdownloader:// link reached the running app"
           Stop-Process -Name YouDownloader -Force -ErrorAction SilentlyContinue
 
       - uses: actions/upload-artifact@v6

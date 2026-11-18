@@ -71,6 +71,14 @@ Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs 
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppName}.exe"; AppUserModelID: "YouDownloader.App"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppName}.exe"; Tasks: desktopicon
 
+[Registry]
+; youdownloader:// links from the browser button (Settings > Browser button)
+; open the app with the link as its argument. Per-user, removed on uninstall.
+Root: HKCU; Subkey: "Software\Classes\youdownloader"; ValueType: string; ValueName: ""; ValueData: "URL:YouDownloader link"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\youdownloader"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\youdownloader\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppName}.exe"",0"
+Root: HKCU; Subkey: "Software\Classes\youdownloader\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppName}.exe"" ""%1"""
+
 [Run]
 ; Shown as a checkbox after a normal install; also runs after a silent update,
 ; which is how the app restarts itself.

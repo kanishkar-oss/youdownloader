@@ -195,7 +195,7 @@ class SpaceHeader(tkinter.Canvas):
         self.create_text(left, ty, text="YouDownloader", anchor="w", fill=p.text_primary,
                          font=self._font(TYPE.display), tags=("overlay",))
         self.create_text(left + self._px(1), ty + self._px(30), anchor="w", fill=p.text_secondary,
-                         text="Video and audio from YouTube  ·  MP4  ·  MOV  ·  MP3  ·  WAV",
+                         text="Video and audio from YouTube  ·  MP4  ·  MOV  ·  MP3  ·  M4A  ·  WAV",
                          font=self._font(TYPE.caption), tags=("overlay",))
 
         # Settings button (icon font glyph) at the right edge of the column.

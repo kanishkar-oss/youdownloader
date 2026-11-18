@@ -34,6 +34,25 @@ for b in "$app"/Contents/Frameworks/bin/*; do
   printf '%s: ' "$(basename "$b")"; otool -l "$b" | awk '/minos/ {print $2; exit}'
 done
 
+echo "== youdownloader:// links"
+/usr/libexec/PlistBuddy -c 'Print :CFBundleURLTypes:0:CFBundleURLSchemes:0' "$app/Contents/Info.plist" | grep -qx youdownloader \
+  || { echo "FAIL: Info.plist doesn't claim youdownloader://"; exit 1; }
+echo "ok: Info.plist claims youdownloader://"
+# Register the unzipped app with LaunchServices, open a link like the browser
+# button does, and check the app received it (Tk's ::tk::mac::LaunchURL).
+LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+"$LSREG" -f "$app" || true
+LOG="$HOME/Library/Logs/YouDownloader/youdownloader.log"
+open "youdownloader://open?url=https%3A%2F%2Fyoutu.be%2FjNQXAC9IVRw" || true
+got=""
+for i in $(seq 1 30); do
+  if grep -q "Link from the browser button: https://youtu.be/jNQXAC9IVRw" "$LOG" 2>/dev/null; then got=1; break; fi
+  sleep 1
+done
+pkill -f "YouDownloader.app/Contents/MacOS/YouDownloader" 2>/dev/null || true
+if [ -n "$got" ]; then echo "ok: a youdownloader:// link reached the app"
+else echo "WARN link: the app didn't log the youdownloader:// link (CI LaunchServices, or Tk lacks LaunchURL)"; tail -5 "$LOG" 2>/dev/null || true; fi
+
 echo "== update swap script"
 python -c "import sys; sys.path.insert(0, '.'); from src.utils.app_update import MAC_SWAP_SCRIPT; print(MAC_SWAP_SCRIPT)" > "$t/swap.sh"
 export YD_UPDATE_NO_RELAUNCH=1

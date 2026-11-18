@@ -8,7 +8,7 @@ import unittest
 os.environ.setdefault("YOUDOWNLOADER_LOG_DIR", os.path.join(tempfile.gettempdir(), "youdownloader-test-logs"))
 from unittest import mock
 
-from src.downloader.formats import FormatManager, VIDEO_MP4, VIDEO_MOV, AUDIO_MP3, AUDIO_WAV
+from src.downloader.formats import FormatManager, VIDEO_MP4, VIDEO_MOV, AUDIO_MP3, AUDIO_M4A, AUDIO_WAV
 from src.downloader.engine import DownloadEngine, _PRIMARY, _PROGRESSIVE
 from src.downloader.queue import DownloadQueue, progress_fraction
 from src.models.download import DownloadItem, DownloadStatus
@@ -16,8 +16,8 @@ from src.models.download import DownloadItem, DownloadStatus
 
 class TestFormatModes(unittest.TestCase):
     def test_labels_round_trip(self):
-        self.assertEqual(FormatManager.labels(), ["MP4", "MOV", "MP3", "WAV"])
-        for mode in (VIDEO_MP4, VIDEO_MOV, AUDIO_MP3, AUDIO_WAV):
+        self.assertEqual(FormatManager.labels(), ["MP4", "MOV", "MP3", "M4A", "WAV"])
+        for mode in (VIDEO_MP4, VIDEO_MOV, AUDIO_MP3, AUDIO_M4A, AUDIO_WAV):
             self.assertEqual(FormatManager.mode_from_label(FormatManager.label(mode)), mode)
 
     def test_unknown_mode_falls_back(self):
@@ -28,7 +28,7 @@ class TestFormatModes(unittest.TestCase):
         self.assertTrue(FormatManager.is_video(VIDEO_MOV))
         self.assertFalse(FormatManager.is_video(AUDIO_WAV))
         self.assertFalse(FormatManager.needs_ffmpeg(VIDEO_MP4))
-        for mode in (VIDEO_MOV, AUDIO_MP3, AUDIO_WAV):
+        for mode in (VIDEO_MOV, AUDIO_MP3, AUDIO_M4A, AUDIO_WAV):
             self.assertTrue(FormatManager.needs_ffmpeg(mode))
 
     def test_quality_options_per_mode(self):
@@ -99,6 +99,17 @@ class TestEngineOptions(unittest.TestCase):
                          ["-c:a", "pcm_s24le", "-ar", "48000"])
         opts = self.build(AUDIO_WAV, "16-bit / original rate")
         self.assertEqual(opts["postprocessor_args"]["extractaudio+ffmpeg_o"], ["-c:a", "pcm_s16le"])
+
+    def test_m4a_copies_the_aac_stream(self):
+        opts = self.build(AUDIO_M4A, "Original quality (no re-encode)")
+        self.assertTrue(opts["format"].startswith("bestaudio[ext=m4a]"))
+        extract = next(p for p in opts["postprocessors"] if p["key"] == "FFmpegExtractAudio")
+        self.assertEqual(extract["preferredcodec"], "m4a")
+        self.assertNotIn("preferredquality", extract)  # no bitrate = no forced re-encode
+        tagged = self.engine._build_opts("out", AUDIO_M4A, "Original quality (no re-encode)", _PRIMARY,
+                                         False, False, "en", embed_metadata=True)
+        self.assertTrue(tagged.get("writethumbnail"))  # cover art like MP3
+        self.assertEqual(FormatManager.extension(AUDIO_M4A), "m4a")
 
     def test_progressive_attempt_keeps_audio_conversion(self):
         opts = self.build(AUDIO_MP3, "Best (320kbps)", _PROGRESSIVE)

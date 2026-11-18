@@ -1,5 +1,18 @@
 # Changelog - YouDownloader
 
+## Version 5.1.7 — browser button, M4A audio
+
+- **Browser button**: Settings → Downloads → Browser button opens a page with
+  a "Send to YouDownloader" bookmark. Clicking it on a YouTube video brings the
+  app forward with that video loaded, in any browser. The installed app
+  registers `youdownloader://` links (Windows registry, macOS Info.plist); a
+  link reaching a second copy is handed to the open window.
+- **M4A audio**: YouTube's own AAC stream saved without re-encoding (the best
+  audio quality available), with cover art and tags.
+- **Drag and drop on macOS accepts every drag type**, so links dragged from
+  browsers that don't include plain text (e.g. Dia) work; HTML links are read too.
+- CI checks the link scheme on the installed Windows app and the shipped Mac app.
+
 ## Version 5.1.6 — drag and drop, notifications, diagnostics
 
 (5.1.5 was built but not published: its Apple Silicon check failed. 5.1.6 signs

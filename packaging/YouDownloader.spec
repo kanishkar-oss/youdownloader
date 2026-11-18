@@ -23,6 +23,7 @@ datas = [
     (os.path.join(ROOT, "assets", "youdownloader.ico"), "assets"),
     (os.path.join(ROOT, "assets", "icon.png"), "assets"),
     (os.path.join(ROOT, "assets", "logo.png"), "assets"),
+    (os.path.join(ROOT, "assets", "browser-button.html"), "assets"),
 ]
 # License notices + what this build ships (written by packaging/build.py).
 NOTICES = os.path.join(ROOT, "build", "notices")
@@ -145,6 +146,9 @@ if IS_MAC:
             "NSHighResolutionCapable": True,
             # Let the dark title bar follow Tk's dark appearance.
             "NSRequiresAquaSystemAppearance": False,
+            # youdownloader:// links from the browser button (src/utils/links.py).
+            "CFBundleURLTypes": [{"CFBundleURLName": "YouDownloader link",
+                                  "CFBundleURLSchemes": ["youdownloader"]}],
             "NSDownloadsFolderUsageDescription": "YouDownloader saves your videos and audio to Downloads.",
             "NSDesktopFolderUsageDescription": "YouDownloader saves downloads to a folder you choose.",
             "NSDocumentsFolderUsageDescription": "YouDownloader saves downloads to a folder you choose.",

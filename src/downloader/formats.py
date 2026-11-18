@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 VIDEO_MP4 = "Video (MP4)"
 VIDEO_MOV = "Video (MOV)"
 AUDIO_MP3 = "Audio (MP3)"
+AUDIO_M4A = "Audio (M4A)"
 AUDIO_WAV = "Audio (WAV)"
 
 # Standard resolution tiers as (short side, long side). A format belongs to the
@@ -29,6 +30,7 @@ class FormatManager:
         VIDEO_MP4: {"kind": "video", "ext": "mp4", "label": "MP4"},
         VIDEO_MOV: {"kind": "video", "ext": "mov", "label": "MOV"},
         AUDIO_MP3: {"kind": "audio", "ext": "mp3", "label": "MP3"},
+        AUDIO_M4A: {"kind": "audio", "ext": "m4a", "label": "M4A"},
         AUDIO_WAV: {"kind": "audio", "ext": "wav", "label": "WAV"},
     }
     DEFAULT_MODE = VIDEO_MP4
@@ -47,6 +49,11 @@ class FormatManager:
     MP3_QUALITIES: Dict[str, str] = {
         "Best (320kbps)": "320",
         "Standard (128kbps)": "128",
+    }
+
+    # M4A: YouTube's own AAC stream, saved without re-encoding (no quality loss).
+    M4A_QUALITIES: Dict[str, None] = {
+        "Original quality (no re-encode)": None,
     }
 
     # WAV preset -> (PCM codec, sample rate or None to keep the source rate).
@@ -96,7 +103,7 @@ class FormatManager:
 
     @classmethod
     def needs_ffmpeg(cls, format_mode: str) -> bool:
-        """MOV conversion and MP3/WAV extraction can't work without FFmpeg."""
+        """MOV conversion and MP3/M4A/WAV extraction can't work without FFmpeg."""
         return cls.normalize_mode(format_mode) != VIDEO_MP4
 
     # ----- qualities -----------------------------------------------------
@@ -108,6 +115,8 @@ class FormatManager:
             return list(cls.VIDEO_QUALITIES)
         if mode == AUDIO_WAV:
             return list(cls.WAV_QUALITIES)
+        if mode == AUDIO_M4A:
+            return list(cls.M4A_QUALITIES)
         return list(cls.MP3_QUALITIES)
 
     @classmethod
@@ -150,6 +159,10 @@ class FormatManager:
         dimension, so vertical and letterboxed videos are handled correctly.
         """
         mode = cls.normalize_mode(format_mode)
+        if mode == AUDIO_M4A:
+            # The AAC (m4a) stream, so it's copied as-is; anything else is
+            # converted to AAC only if a video has no AAC audio at all.
+            return {"format": "bestaudio[ext=m4a]/bestaudio[acodec^=mp4a]/bestaudio/best"}
         if not cls.is_video(mode):
             # Best audio stream; MP3/WAV are transcoded from it anyway.
             return {"format": "bestaudio/best"}

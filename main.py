@@ -57,6 +57,32 @@ def main() -> int:
         except (IndexError, ValueError):
             pass
 
+    # A youdownloader:// link from the browser button (Windows passes it as an
+    # argument): leave it for the window, whether it's already open or about to.
+    from src.utils import links
+    link = next((a for a in argv[1:] if links.is_app_link(a)), None)
+    if link:
+        try:
+            links.post(link)
+        except OSError:
+            pass
+
+    tool_mode = "--self-test" in argv or "--update-ytdlp" in argv
+    if not tool_mode:
+        if paths.IS_WINDOWS:
+            try:
+                # Own taskbar identity, so Windows shows our icon rather than pythonw's.
+                import ctypes
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("YouDownloader.App")
+            except Exception:
+                pass
+        if not winsys.acquire_single_instance():
+            # Already open: bring that window forward instead of starting a second
+            # copy (two instances would fight over the queue file). It picks up
+            # any link posted above.
+            winsys.focus_existing_window()
+            return 0
+
     # Packaged app: use a newer yt-dlp downloaded since this build, if any.
     # Must run before anything imports yt_dlp.
     from src.utils import ytdlp_override
@@ -70,20 +96,6 @@ def main() -> int:
         ok, msg, _new = ytdlp_override.install()
         print(msg)
         return 0 if ok else 1
-
-    if paths.IS_WINDOWS:
-        try:
-            # Own taskbar identity, so Windows shows our icon rather than pythonw's.
-            import ctypes
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("YouDownloader.App")
-        except Exception:
-            pass
-
-    if not winsys.acquire_single_instance():
-        # Already open: bring that window forward instead of starting a second
-        # copy (two instances would fight over the queue file).
-        winsys.focus_existing_window()
-        return 0
 
     try:
         from src.app import YouDownloaderApp

@@ -11,9 +11,10 @@ built on yt-dlp. Installers for both, with built-in automatic updates.
     Up to 1080p it uses YouTube's own H.264 stream (fast, lossless). For 1440p/4K,
     where YouTube only offers VP9/AV1, it re-encodes to H.264, on the GPU
     (NVENC / Quick Sync) when available, otherwise libx264 (slower).
-- **Audio downloads** — MP3 (320 or 128 kbps) or WAV (16-bit/44.1 kHz CD,
-  16-bit at the original rate, or 24-bit/48 kHz). YouTube audio is lossy at the
-  source, so WAV is for editing convenience, not extra fidelity.
+- **Audio downloads** — M4A (YouTube's own AAC stream, saved without
+  re-encoding: the best quality there is), MP3 (320 or 128 kbps) or WAV
+  (16-bit/44.1 kHz CD, 16-bit at the original rate, or 24-bit/48 kHz). YouTube
+  audio is lossy at the source, so WAV is for editing convenience, not extra fidelity.
 - **Download queue** — queue links, process sequentially (Start / Stop), persisted across restarts; per-item retry / remove / reveal-in-folder via an overflow (⋯) menu
 - **Single video from playlist links** — a `watch?v=…&list=…` link (e.g. from a Mix) downloads just that video; `/playlist?list=…` links download the playlist
 - **File names** — type a name before downloading (blank = the video title), or
@@ -26,6 +27,7 @@ built on yt-dlp. Installers for both, with built-in automatic updates.
 - **Paste list…** — add many links to the queue at once
 - **Clipboard auto-fill** — copy a YouTube link, switch to the app, and it's filled in and previewed
 - **Drag and drop** — drop a link (from a browser's address bar or tab, or a .url/.webloc link file) anywhere on the window
+- **Browser button** — a "Send to YouDownloader" bookmark (Settings → Downloads → Browser button) sends the video you're watching to the app in one click, in any browser, through `youdownloader://` links the installed app registers
 - **When done** — Play / Show in folder buttons; if the app is in the background, a desktop notification and a taskbar flash / Dock bounce (notifications can be turned off in Settings → Interface)
 - **Copy diagnostics** — Settings → About & updates copies versions, settings and recent log lines (never cookies) for a bug report
 - **Full quality with sign-in** — import a cookies.txt in Settings (see below)

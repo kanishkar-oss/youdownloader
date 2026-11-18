@@ -226,6 +226,9 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
             self.createcommand("tk::mac::Quit", self.on_closing)
             self.createcommand("tk::mac::ShowPreferences", self._open_settings)
             self.createcommand("tk::mac::ReopenApplication", lambda *a: (self.deiconify(), self.lift()))
+            # youdownloader:// links (Info.plist CFBundleURLTypes) arrive as an
+            # Apple Event, also when the app is already open.
+            self.createcommand("::tk::mac::LaunchURL", lambda url, *a: self.handle_app_link(str(url)))
         except Exception as e:
             self.logger.debug(f"macOS app hooks unavailable: {e}")
 
@@ -1530,7 +1533,45 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
         """Queue status callback (may be a worker thread): only flag a redraw."""
         self._queue_dirty = True
 
+    def _check_link_inbox(self) -> None:
+        """Links from the browser button (see src/utils/links.py)."""
+        from src.utils import links
+        for link in links.take():
+            self.handle_app_link(link)
+
+    def handle_app_link(self, link: str) -> None:
+        """A youdownloader:// link: bring the window forward and load the video."""
+        from src.utils import links
+        url = links.video_url_from_link(link) or (link if link.lower().startswith("http") else None)
+        self.logger.info(f"Link from the browser button: {url or link[:120]}")
+        self.bring_to_front()
+        if not url or not validate_youtube_url(url)[0]:
+            if not self.is_downloading:
+                self.progress_display.set_status("That page isn't a YouTube video", self.palette.warning)
+            return
+        self.url_entry.delete(0, "end")
+        self.url_entry.insert(0, url)
+        self._update_url_validity()
+        if not self.is_downloading:
+            self.fetch_video_info()
+
+    def bring_to_front(self) -> None:
+        try:
+            if self.state() == "iconic":
+                self.deiconify()
+            self.lift()
+            if paths.IS_WINDOWS:  # Windows only lets a window jump forward like this
+                self.attributes("-topmost", True)
+                self.after(200, lambda: self.attributes("-topmost", False))
+            self.focus_force()
+        except Exception:
+            pass
+
     def _poll_queue(self) -> None:
+        try:
+            self._check_link_inbox()
+        except Exception as e:
+            self.logger.debug(f"Link inbox error (non-critical): {e}")
         try:
             if self._queue_dirty:
                 self._queue_dirty = False
