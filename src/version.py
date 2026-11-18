@@ -6,4 +6,4 @@ __version__ = "5.0.0"
 APP_NAME = "YouDownloader"
 
 # GitHub repo whose Releases the in-app updater reads (must be public).
-GITHUB_REPO = "kanatwork/YouDownloader"
+GITHUB_REPO = "kanishkar-oss/youdownloader"

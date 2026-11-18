@@ -78,7 +78,7 @@ A dark, minimal "space" design:
 ## Download (Windows and macOS)
 
 Get the latest version from the
-[**Releases page**](https://github.com/kanatwork/YouDownloader/releases/latest).
+[**Releases page**](https://github.com/kanishkar-oss/youdownloader/releases/latest).
 FFmpeg and Deno come built in; there's nothing else to install.
 
 | System | File |

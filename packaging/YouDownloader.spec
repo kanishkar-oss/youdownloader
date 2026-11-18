@@ -90,7 +90,7 @@ if IS_MAC:
         coll,
         name=f"{APP_NAME}.app",
         icon=os.path.join(ROOT, "assets", "youdownloader.icns"),
-        bundle_identifier="io.github.kanatwork.youdownloader",
+        bundle_identifier="io.github.kanishkar-oss.youdownloader",
         version=__version__,
         info_plist={
             "CFBundleName": APP_NAME,
