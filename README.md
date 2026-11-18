@@ -174,9 +174,10 @@ python3 -m venv .venv
 ```
 
 ### Run
-**Windows:** double-click `YouDownloader.pyw`, or use the **YouDownloader**
+**Windows:** double-click `YouDownloader.pyw`, or use the **YouDownloader (source)**
 shortcut on your Desktop / in the Start Menu (`install_shortcut.bat` creates
-it). Both open the app with no console window, and opening it again just
+it, named so it doesn't replace the installed app's shortcut). Both open the
+app with no console window, and opening it again just
 brings the existing window forward. `run.bat` shows a console with logs.
 
 **macOS:** `./run.sh`.

@@ -92,20 +92,25 @@ def can_self_install() -> bool:
     return paths.FROZEN and asset_suffix() is not None
 
 
+_UA = {"User-Agent": f"{APP_NAME}-updater"}
+
+
 def check(timeout: float = 12) -> Optional[Release]:
     """The latest release if it's newer than this build, else None."""
     import requests
     try:
-        r = requests.get(LATEST_URL, timeout=timeout, headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": f"{APP_NAME}-updater",
-        })
+        r = requests.get(LATEST_URL, timeout=timeout,
+                         headers={"Accept": "application/vnd.github+json", **_UA})
     except requests.RequestException as e:
         raise UpdateError(f"Couldn't reach GitHub to check for updates ({e.__class__.__name__}).")
     if r.status_code == 404:
         return None  # no releases yet
-    if r.status_code == 403 and "rate limit" in r.text.lower():
-        raise UpdateError("GitHub's update check limit was hit. Try again in an hour.")
+    if r.status_code in (403, 429):
+        # The API allows 60 anonymous calls an hour per IP address, which a
+        # shared office/school network can use up. The public release pages
+        # aren't limited that way.
+        logger.info(f"GitHub API refused the update check ({r.status_code}); using the releases page")
+        return _check_releases_page(timeout)
     if r.status_code != 200:
         raise UpdateError(f"The update check failed (GitHub returned {r.status_code}).")
     data = r.json()
@@ -126,6 +131,50 @@ def check(timeout: float = 12) -> Optional[Release]:
                 rel.sha256 = digest.split(":", 1)[1].lower()
             break
     logger.info(f"Update available: {__version__} -> {version} ({rel.asset_name or 'no asset'})")
+    return rel
+
+
+def sha_from_sums(text: str, name: str) -> Optional[str]:
+    """The hash for `name` in a `sha256sum` listing ("<hash>  <file>")."""
+    for line in (text or "").splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1].lstrip("*") == name and re.fullmatch(r"[0-9a-fA-F]{64}", parts[0]):
+            return parts[0].lower()
+    return None
+
+
+def _check_releases_page(timeout: float) -> Optional[Release]:
+    """Fallback check without the API: github.com/<repo>/releases/latest
+    redirects to the newest tag; files follow the release naming scheme and
+    their hashes come from the release's SHA256SUMS.txt."""
+    import requests
+    try:
+        r = requests.get(RELEASES_PAGE, timeout=timeout, headers=_UA, allow_redirects=False)
+    except requests.RequestException as e:
+        raise UpdateError(f"Couldn't reach GitHub to check for updates ({e.__class__.__name__}).")
+    location = r.headers.get("Location", "")
+    m = re.search(r"/releases/tag/(v?(\d+(?:\.\d+)*))/?$", location)
+    if r.status_code not in (301, 302, 303, 307, 308):
+        raise UpdateError(f"The update check failed (GitHub returned {r.status_code}).")
+    if not m:
+        return None  # redirected to the release list: no releases yet
+    tag, version = m.group(1), m.group(2)
+    if not is_newer(version):
+        return None
+    page = location if location.startswith("http") else "https://github.com" + location
+    rel = Release(version=version, notes="", page_url=page)
+    suffix = asset_suffix()
+    if suffix:
+        name = f"{APP_NAME}-{version}{suffix}"
+        base = f"https://github.com/{GITHUB_REPO}/releases/download/{tag}/"
+        try:
+            sums = requests.get(base + "SHA256SUMS.txt", timeout=timeout, headers=_UA)
+            sha = sha_from_sums(sums.text, name) if sums.ok else None
+        except requests.RequestException:
+            sha = None
+        if sha:  # listed in the checksums, so the file exists and can be verified
+            rel.asset_name, rel.asset_url, rel.sha256 = name, base + name, sha
+    logger.info(f"Update available (releases page): {__version__} -> {version} ({rel.asset_name or 'no asset'})")
     return rel
 
 

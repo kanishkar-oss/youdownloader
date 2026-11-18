@@ -1,4 +1,4 @@
-# Creates "YouDownloader" shortcuts on the Desktop and in the Start Menu that
+# Creates "YouDownloader (source)" shortcuts on the Desktop and in the Start Menu that
 # open the app with no console window (via the project's .venv pythonw.exe).
 # Safe to re-run: it just overwrites the two shortcuts.
 $ErrorActionPreference = 'Stop'
@@ -15,8 +15,8 @@ $launcher = Join-Path $root 'YouDownloader.pyw'
 
 $shell = New-Object -ComObject WScript.Shell
 $targets = @(
-    (Join-Path ([Environment]::GetFolderPath('Desktop')) 'YouDownloader.lnk'),
-    (Join-Path ([Environment]::GetFolderPath('Programs')) 'YouDownloader.lnk')
+    (Join-Path ([Environment]::GetFolderPath('Desktop')) 'YouDownloader (source).lnk'),
+    (Join-Path ([Environment]::GetFolderPath('Programs')) 'YouDownloader (source).lnk')
 )
 foreach ($lnkPath in $targets) {
     $lnk = $shell.CreateShortcut($lnkPath)
