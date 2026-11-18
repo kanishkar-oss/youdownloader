@@ -37,6 +37,13 @@ class TestDroppedLinks(unittest.TestCase):
             plistlib.dump({"URL": "https://youtu.be/q"}, f)
         self.assertEqual(links_from_drop(path, splitlist=lambda s: [path]), ["https://youtu.be/q"])
 
+    def test_html_link(self):  # what some browsers (e.g. Dia) offer instead of plain text
+        data = '<a href="https://www.youtube.com/watch?v=abc&amp;t=10">Video title</a>'
+        self.assertEqual(links_from_drop(data), ["https://www.youtube.com/watch?v=abc&t=10"])
+
+    def test_url_and_title(self):  # public.url + public.url-name
+        self.assertEqual(links_from_drop("https://youtu.be/q\nMy video"), ["https://youtu.be/q"])
+
     def test_nothing_useful(self):
         self.assertEqual(links_from_drop("just some words"), [])
 

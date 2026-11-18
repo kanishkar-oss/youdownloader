@@ -142,17 +142,19 @@ def run(argv) -> int:
         """tkdnd loads and a drop target can be registered (the app works
         without it, so this is a warning, not a failure)."""
         import customtkinter
-        from tkinterdnd2 import TkinterDnD, DND_TEXT, DND_FILES
+        from tkinterdnd2 import TkinterDnD, DND_ALL, DND_TEXT, DND_FILES
         root = customtkinter.CTk()
         root.withdraw()
         try:
             dnd = TkinterDnD.require(root)
             frame = customtkinter.CTkFrame(root)
-            frame.drop_target_register(DND_TEXT, DND_FILES)
+            # Same registration as the app: every type on macOS.
+            types = "all types" if paths.IS_MAC else "text + files"
+            frame.drop_target_register(*([DND_ALL] if paths.IS_MAC else [DND_TEXT, DND_FILES]))
             root.update()
         finally:
             root.destroy()
-        return f"tkdnd {dnd}"
+        return f"tkdnd {dnd}, accepts {types}"
     check("drag and drop", drag_and_drop, required=False)
 
     if url:

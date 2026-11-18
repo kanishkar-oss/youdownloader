@@ -53,7 +53,7 @@ logger = get_logger()
 # Drag a link onto the window (tkdnd via tkinterdnd2). Optional: without it
 # the app works as before.
 try:
-    from tkinterdnd2 import TkinterDnD, DND_FILES, DND_TEXT
+    from tkinterdnd2 import TkinterDnD, DND_ALL, DND_FILES, DND_TEXT
     _DnDMixin = TkinterDnD.DnDWrapper
 except Exception:  # pragma: no cover - missing or broken install
     TkinterDnD = None
@@ -63,8 +63,11 @@ except Exception:  # pragma: no cover - missing or broken install
 def links_from_drop(data: str, splitlist=None) -> list:
     """YouTube-looking links in dropped data: plain text / URLs, or dropped
     .url (Windows) / .webloc (macOS) link files."""
+    import html
     import re
     text = (data or "").strip()
+    if "<" in text or "&amp;" in text:  # an HTML link: <a href="...&amp;t=10">
+        text = html.unescape(text)
     urls = re.findall(r"https?://[^\s{}\"'<>]+", text)
     if urls:
         return urls
@@ -513,7 +516,16 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
             return
         try:
             TkinterDnD.require(self)
-            self.drop_target_register(DND_TEXT, DND_FILES)
+            # Browsers differ in what a dragged link carries: Chrome adds plain
+            # text, but others (Dia, Arc, Safari tabs...) may offer only a URL
+            # or an HTML link. On macOS accept every type and pick the link out
+            # of whatever arrives; fall back to text + files if that's refused.
+            try:
+                if not paths.IS_MAC:
+                    raise RuntimeError("explicit types on Windows")
+                self.drop_target_register(DND_ALL)
+            except Exception:
+                self.drop_target_register(DND_TEXT, DND_FILES)
             self.dnd_bind("<<DropEnter>>", self._on_drop_enter)
             self.dnd_bind("<<DropLeave>>", self._on_drop_leave)
             self.dnd_bind("<<Drop>>", self._on_drop)
@@ -539,6 +551,10 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
         self._on_drop_leave(event)
         links = [u for u in links_from_drop(event.data, self.tk.splitlist) if validate_youtube_url(u)[0]]
         if not links:
+            # Helps support a browser whose drags carry something unexpected
+            # (shows up in Copy diagnostics).
+            self.logger.info(f"Drop without a YouTube link: type={getattr(event, 'type', '?')!r} "
+                             f"offered={getattr(event, 'types', '?')!r} data={str(event.data)[:200]!r}")
             if not self.is_downloading:
                 self.progress_display.set_status("That isn't a YouTube link", self.palette.warning)
             return event.action
