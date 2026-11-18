@@ -1,7 +1,7 @@
 """App identity. `scripts/release.ps1` / `release.sh` rewrite __version__ when
 you cut a release; CI checks that the git tag (vX.Y.Z) matches it."""
 
-__version__ = "5.1.1"
+__version__ = "5.1.2"
 
 APP_NAME = "YouDownloader"
 
