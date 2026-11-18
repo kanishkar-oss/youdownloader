@@ -86,14 +86,33 @@ def windows_installer() -> None:
          f"/DOutputDir={RELEASE}", os.path.join(ROOT, "packaging", "windows", "installer.iss")])
 
 
+# Mach-O (thin 32/64-bit, both byte orders) and universal ("fat") binaries.
+_MACHO_MAGICS = {bytes.fromhex(h) for h in ("feedface", "feedfacf", "cefaedfe", "cffaedfe", "cafebabe")}
+
+
 def mac_label() -> str:
     return "apple-silicon" if platform.machine().lower() in ("arm64", "aarch64") else "intel"
 
 
 def mac_packages() -> None:
     app = os.path.join(DIST, f"{APP_NAME}.app")
-    # Ad-hoc signature over the whole bundle: required for Apple Silicon to run
-    # it at all. (Gatekeeper still warns for apps that aren't notarized.)
+    # Apple Silicon refuses to load native code that isn't signed. Some
+    # packages ship libraries as data files (tkinterdnd2's tkdnd), which
+    # PyInstaller and `codesign --deep` don't sign, so sign every Mach-O file
+    # first, then the bundle. (Gatekeeper still warns: not notarized.)
+    machos = []
+    for dirpath, _dirs, files in os.walk(app):
+        for name in files:
+            path = os.path.join(dirpath, name)
+            if os.path.islink(path):
+                continue
+            with open(path, "rb") as f:
+                magic = f.read(4)
+            if magic in _MACHO_MAGICS:
+                machos.append(path)
+    print(f"Signing {len(machos)} native files")
+    for path in sorted(machos, key=lambda p: -p.count(os.sep)):  # innermost first
+        subprocess.run(["codesign", "--force", "--sign", "-", path], check=True, capture_output=True)
     run(["codesign", "--force", "--deep", "--sign", "-", app])
     base = os.path.join(RELEASE, f"{APP_NAME}-{__version__}-mac-{mac_label()}")
     run(["ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", app, base + ".zip"])

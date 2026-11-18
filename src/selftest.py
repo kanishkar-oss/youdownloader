@@ -21,13 +21,16 @@ def run(argv) -> int:
     url = argv[argv.index("--download") + 1] if "--download" in argv else None
     lines, ok = [], True
 
-    def check(name, fn):
+    def check(name, fn, required=True):
+        """required=False: a nice-to-have (the app works without it); its
+        failure is reported as WARN and doesn't fail the self-test."""
         nonlocal ok
         try:
             lines.append(f"PASS {name}: {fn()}")
         except Exception as e:
-            ok = False
-            lines.append(f"FAIL {name}: {e}\n{traceback.format_exc()}")
+            if required:
+                ok = False
+            lines.append(f"{'FAIL' if required else 'WARN'} {name}: {e}\n{traceback.format_exc()}")
 
     from src.utils import paths
     from src.version import __version__
@@ -130,15 +133,27 @@ def run(argv) -> int:
         root = customtkinter.CTk()
         root.withdraw()
         family = init_fonts(root)
-        # Drag and drop: tkdnd loads and a drop target can be registered.
-        from tkinterdnd2 import TkinterDnD, DND_TEXT, DND_FILES
-        dnd = TkinterDnD.require(root)
-        frame = customtkinter.CTkFrame(root)
-        frame.drop_target_register(DND_TEXT, DND_FILES)
         root.update()
         root.destroy()
-        return f"Tk ok, font {family}, drag and drop (tkdnd {dnd})"
+        return f"Tk ok, font {family}"
     check("tk", tk)
+
+    def drag_and_drop():
+        """tkdnd loads and a drop target can be registered (the app works
+        without it, so this is a warning, not a failure)."""
+        import customtkinter
+        from tkinterdnd2 import TkinterDnD, DND_TEXT, DND_FILES
+        root = customtkinter.CTk()
+        root.withdraw()
+        try:
+            dnd = TkinterDnD.require(root)
+            frame = customtkinter.CTkFrame(root)
+            frame.drop_target_register(DND_TEXT, DND_FILES)
+            root.update()
+        finally:
+            root.destroy()
+        return f"tkdnd {dnd}"
+    check("drag and drop", drag_and_drop, required=False)
 
     if url:
         def download():

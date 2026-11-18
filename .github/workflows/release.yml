@@ -70,7 +70,15 @@ jobs:
 
       - name: Check the shipped Mac app (zip, dmg, self-test, update swap)
         if: runner.os == 'macOS'
-        run: sh packaging/ci_check_mac.sh
+        shell: bash
+        run: |
+          set -o pipefail
+          sh packaging/ci_check_mac.sh 2>&1 | tee ci_check.log || status=$?
+          # The run's summary page is public (logs need a sign-in), so failures can be read there.
+          { echo "### ${{ matrix.label }}: $([ -z "${status:-}" ] && echo passed || echo FAILED)"
+            echo '```'; grep -E '^(==|ok:|FAIL|PASS|WARN|RESULT|All macOS)|Error|error:' ci_check.log | head -60
+            echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit ${status:-0}
 
       - name: Install the Windows build the way the updater does, then self-test it
         if: runner.os == 'Windows'
@@ -89,6 +97,10 @@ jobs:
           $t = Start-Process $exe -PassThru -ArgumentList '--self-test',"$PWD\selftest.txt"
           if (-not $t.WaitForExit(120000)) { throw "self-test timed out" }
           Get-Content selftest.txt
+          # The run's summary page is public (logs need a sign-in).
+          $verdict = if ($t.ExitCode -eq 0) { "passed" } else { "FAILED" }
+          @("### windows: installed app self-test $verdict", '```') + (Get-Content selftest.txt | Select-String -Pattern '^(PASS|FAIL|WARN|RESULT)' | ForEach-Object { $_.Line }) + '```' |
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY
           if ($t.ExitCode -ne 0) { throw "self-test failed" }
           Stop-Process -Name YouDownloader -Force -ErrorAction SilentlyContinue
 

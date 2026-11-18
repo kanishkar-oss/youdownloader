@@ -1,6 +1,10 @@
 # Changelog - YouDownloader
 
-## Version 5.1.5 — drag and drop, notifications, diagnostics
+## Version 5.1.6 — drag and drop, notifications, diagnostics
+
+(5.1.5 was built but not published: its Apple Silicon check failed. 5.1.6 signs
+every native library inside the Mac app, and CI now posts its check results
+on the run's public summary page.)
 
 - **Drag a link onto the window** (from a browser's address bar or tab, or a
   .url / .webloc file): it goes into the link box and is previewed.
