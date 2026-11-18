@@ -19,8 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-Packaged builds of YouDownloader also include third-party software under its
-own licenses (FFmpeg under the GPL, Deno, Python and others). See
-THIRD-PARTY-NOTICES.md, and the full notices shipped inside the app
-(Settings > About & updates > Open-source licenses).
