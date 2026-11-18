@@ -185,7 +185,10 @@ def check(timeout: float = 12) -> Optional[Release]:
                   page_url=data.get("html_url") or RELEASES_PAGE)
     suffix = asset_suffix()
     assets = data.get("assets") or []
-    for asset in assets:
+    # Prefer the versioned file; releases also carry copies with permanent
+    # names (YouDownloader-windows-setup.exe) for human download links.
+    exact = f"{APP_NAME}-{version}{suffix}" if suffix else None
+    for asset in sorted(assets, key=lambda a: a.get("name") != exact):
         if suffix and asset.get("name", "").endswith(suffix):
             rel.asset_name = asset["name"]
             rel.asset_url = asset.get("browser_download_url")

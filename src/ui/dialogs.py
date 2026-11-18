@@ -618,13 +618,16 @@ class SettingsDialog:
 
         # --- Downloader ---
         c = card("Downloader")
+        from src.utils import paths, ytdlp_override
         age = updater.ytdlp_age_days()
-        if updater.can_update_ytdlp():
-            ver_desc = (f"Released {age} days ago. YouTube changes often; keep it current."
-                        if age is not None else "The download engine.")
+        released = f"Released {age} days ago. " if age is not None else ""
+        if not paths.FROZEN:
+            ver_desc = released + "YouTube changes often; keep it current."
+        elif ytdlp_override.state.get("active"):
+            ver_desc = (released + f"Downloaded by the app (the built-in one is "
+                        f"{ytdlp_override.state.get('bundled')}).")
         else:
-            ver_desc = ("Built into this app" + (f" (released {age} days ago)" if age is not None else "")
-                        + ". App updates bring newer versions.")
+            ver_desc = released + "Built into the app. Newer versions with YouTube fixes download automatically."
         right, ver_lbl = row(c, f"yt-dlp {updater.ytdlp_version()}", ver_desc)
 
         def do_update():
@@ -643,8 +646,29 @@ class SettingsDialog:
 
         update_btn = SecondaryButton(right, P, text="Check for update", icon="refresh", width=176,
                                      height=HEIGHT.button_sm, command=do_update)
-        if updater.can_update_ytdlp():
-            update_btn.pack()
+        update_btn.pack()
+        if paths.FROZEN:
+            divider(c)
+            right, _ = row(c, "Download YouTube fixes automatically",
+                           "Get new yt-dlp versions in the background (about 3 MB); they're used "
+                           "from the next start.")
+            switch(right, "auto_update_ytdlp", True)
+            if ytdlp_override.state.get("active"):
+                divider(c)
+                right, back_lbl = row(c, "Use the built-in yt-dlp",
+                                      f"Go back to {ytdlp_override.state.get('bundled')} if the newer one "
+                                      "causes problems (takes effect after a restart).")
+
+                def use_builtin():
+                    parent.config.set("auto_update_ytdlp", False)
+                    ytdlp_override.reset()
+                    if back_lbl:
+                        back_lbl.configure(text="Done: the built-in yt-dlp is used from the next start, and "
+                                                "automatic yt-dlp updates are off.")
+                    back_btn.configure(state="disabled")
+                back_btn = SecondaryButton(right, P, text="Use built-in", width=120, height=HEIGHT.button_sm,
+                                           command=use_builtin)
+                back_btn.pack()
         divider(c)
         right, _ = row(c, "Solver updates from GitHub",
                        "Let yt-dlp fetch a newer throttling solver when the bundled one is outdated.")
@@ -708,6 +732,23 @@ class SettingsDialog:
         divider(c)
         right, _ = row(c, "Check automatically", "Look for a new version each time the app opens.")
         switch(right, "auto_check_updates", True)
+        divider(c)
+        right, _ = row(c, "Open-source licenses", "YouDownloader is MIT-licensed and includes FFmpeg, "
+                                                  "Deno, Python and other open-source software.")
+
+        def show_licenses():
+            from src.utils import paths, winsys
+            notices = paths.resource("licenses", "THIRD-PARTY-NOTICES.txt")
+            try:
+                if os.path.isfile(notices):
+                    winsys.open_path(notices)
+                else:  # running from source: the summary in the repo
+                    from src.version import GITHUB_REPO
+                    winsys.open_url(f"https://github.com/{GITHUB_REPO}/blob/main/THIRD-PARTY-NOTICES.md")
+            except Exception as e:
+                ErrorDialog.show(d.top, "Couldn't open the licenses", str(e))
+        SecondaryButton(right, P, text="View", icon="open", width=96, height=HEIGHT.button_sm,
+                        command=show_licenses).pack()
 
         footer = customtkinter.CTkFrame(d.top, fg_color="transparent")
         footer.pack(fill="x", padx=SPACING.xl + 4, pady=SPACING.lg)

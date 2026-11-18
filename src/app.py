@@ -70,11 +70,19 @@ class YouDownloaderApp(customtkinter.CTk):
 
         self.config = Config()
         self.logger = logger
+        from src.utils import ytdlp_override
+        ytdlp_source = "updated in the app" if ytdlp_override.state.get("active") else "built in"
         self.logger.info(f"Starting YouDownloader v{__version__} ({sys.platform}"
                          f"{', packaged' if paths.FROZEN else ', from source'}, "
-                         f"yt-dlp {updater.ytdlp_version()}, font {self.font_family})")
+                         f"yt-dlp {updater.ytdlp_version()} {ytdlp_source if paths.FROZEN else ''}, "
+                         f"font {self.font_family})")
+        if ytdlp_override.state.get("error"):
+            self.logger.warning(f"The downloaded yt-dlp failed to load and was set aside; using the "
+                                f"built-in one: {ytdlp_override.state['error']}")
         self._pending_release: Optional[app_update.Release] = None
         self._update_banner = None
+        self._ytdlp_banner = None
+        self._ytdlp_ready: Optional[str] = None
 
         # Remote JS-solver updates (opt-in). None until asked once.
         self.allow_remote = bool(self.config.get("js_runtime_consent"))
@@ -166,6 +174,9 @@ class YouDownloaderApp(customtkinter.CTk):
         self.after(1500, self._after_start_update_housekeeping)
         if app_update.can_self_install() and self.config.get("auto_check_updates", True):
             self.after(4000, lambda: self.check_for_app_update(manual=False))
+        if paths.FROZEN and self.config.get("auto_check_updates", True) and \
+                self.config.get("auto_update_ytdlp", True):
+            self.after(9000, self._auto_update_ytdlp)
 
     # ===== platform =========================================================
 
@@ -358,11 +369,62 @@ class YouDownloaderApp(customtkinter.CTk):
             self.logger.info(msg)
 
             def finish():
-                (InfoDialog if ok else ErrorDialog).show(self, "yt-dlp update", msg)
+                if ok and "Restart" in msg:
+                    ConfirmDialog.show(self, "yt-dlp updated", msg,
+                                       lambda yes: yes and self.restart_app(),
+                                       confirm_text="Restart now", cancel_text="Later")
+                else:
+                    (InfoDialog if ok else ErrorDialog).show(self, "yt-dlp update", msg)
                 if on_done:
                     on_done(ok, msg)
             self.after(0, finish)
         threading.Thread(target=work, daemon=True).start()
+
+    def _auto_update_ytdlp(self) -> None:
+        """Packaged app: fetch a newer yt-dlp in the background (YouTube fixes
+        arrive days after YouTube breaks something); it's used after a restart."""
+        from src.utils import ytdlp_override
+
+        def work():
+            try:
+                ok, msg, new = ytdlp_override.install()
+            except Exception as e:
+                self.logger.error(f"yt-dlp auto-update failed: {e}", exc_info=True)
+                return
+            self.logger.info(f"yt-dlp auto-update: {msg}")
+            if ok and new:
+                self.after(0, lambda: self._show_ytdlp_ready(new))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _show_ytdlp_ready(self, version: str) -> None:
+        self._ytdlp_ready = version
+        if getattr(self, "_ytdlp_banner", None) is not None:
+            try:
+                self._ytdlp_banner.destroy()
+            except Exception:
+                pass
+        if not hasattr(self, "_url_row"):
+            return
+        self._ytdlp_banner = InlineBanner(
+            self._banner_parent, self.palette, tone="info", headline="YouTube fixes are ready",
+            detail=f"yt-dlp {version} is downloaded. Restart YouDownloader to use it.",
+            action_text="Restart", on_action=self.restart_app)
+        self._ytdlp_banner.pack(fill="x", pady=(0, SPACING.md), before=self._url_row)
+
+    def restart_app(self) -> None:
+        if self.is_downloading or self.queue.is_running():
+            InfoDialog.show(self, "Finish your downloads first",
+                            "A download is still running. Let it finish (or press Stop), then restart.")
+            return
+        try:
+            winsys.relaunch_after_exit()
+        except Exception as e:
+            self.logger.error(f"Restart failed: {e}", exc_info=True)
+            ErrorDialog.show(self, "Couldn't restart", f"{e}\n\nClose and reopen YouDownloader instead.")
+            return
+        self.logger.info("Restarting")
+        self.exit_for_update = True  # main.py exits the process right after mainloop
+        self.on_closing()
 
     def _open_settings(self) -> None:
         SettingsDialog.show(self)
@@ -571,8 +633,11 @@ class YouDownloaderApp(customtkinter.CTk):
     def _build_banners(self, parent) -> None:
         self._banner_parent = parent
         self._update_banner = None
+        self._ytdlp_banner = None
         if self._pending_release and self.config.get("skipped_update_version") != self._pending_release.version:
             self.after_idle(self._show_update_banner)
+        if getattr(self, "_ytdlp_ready", None):
+            self.after_idle(lambda: self._show_ytdlp_ready(self._ytdlp_ready))
         banners = []
         if not self.ffmpeg_available and not self.config.get("banner_dismissed_ffmpeg"):
             detail = "Needed for MOV, MP3 and WAV, and to merge HD video with its audio."
@@ -584,12 +649,8 @@ class YouDownloaderApp(customtkinter.CTk):
         if age is not None and age > updater.STALE_AFTER_DAYS and \
                 self.config.get("banner_dismissed_ytdlp") != updater.ytdlp_version():
             holder = {}
-            if updater.can_update_ytdlp():
-                detail, on_action = ("YouTube changes often and old versions start failing.",
-                                     lambda: (holder["b"].destroy(), self._update_ytdlp()))
-            else:  # packaged app: yt-dlp is refreshed by app updates
-                detail, on_action = ("YouTube changes often. Update YouDownloader to get a newer one.",
-                                     lambda: self.check_for_app_update(manual=True))
+            detail, on_action = ("YouTube changes often and old versions start failing.",
+                                 lambda: (holder["b"].destroy(), self._update_ytdlp()))
             banners.append(dict(tone="warning", headline=f"yt-dlp is {age} days old",
                                 detail=detail, action_text="Update", on_action=on_action,
                                 on_dismiss=lambda: self.config.set("banner_dismissed_ytdlp",

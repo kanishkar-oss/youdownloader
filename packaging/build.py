@@ -41,6 +41,27 @@ def ensure_tools() -> None:
     fetch_tools.fetch(TOOLS)
 
 
+def write_build_info() -> None:
+    """build/build_info.json, bundled at the app's resource root: what this
+    build ships, read at startup without importing yt_dlp (see
+    src/utils/ytdlp_override.py)."""
+    import datetime
+    import importlib.metadata as md
+    import json
+    info = {"app_version": __version__, "built": datetime.date.today().isoformat(),
+            "yt_dlp": md.version("yt-dlp"), "yt_dlp_ejs": md.version("yt-dlp-ejs")}
+    os.makedirs(os.path.join(ROOT, "build"), exist_ok=True)
+    with open(os.path.join(ROOT, "build", "build_info.json"), "w", encoding="utf-8") as f:
+        json.dump(info, f, indent=2)
+    print(f"Build info: {info}")
+
+
+def notices() -> None:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import make_notices
+    make_notices.build()
+
+
 def pyinstaller() -> None:
     run([sys.executable, "-m", "PyInstaller", os.path.join(ROOT, "packaging", "YouDownloader.spec"),
          "--noconfirm", "--clean", "--distpath", DIST, "--workpath", os.path.join(ROOT, "build", "pyinstaller")],
@@ -97,6 +118,8 @@ def main() -> None:
     print(f"Building {APP_NAME} {__version__} for {sys.platform} ({platform.machine()})")
     if not args.skip_tools:
         ensure_tools()
+    write_build_info()
+    notices()
     pyinstaller()
     if args.skip_installer:
         return

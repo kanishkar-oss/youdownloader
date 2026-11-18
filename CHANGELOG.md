@@ -1,5 +1,24 @@
 # Changelog - YouDownloader
 
+## Version 5.1.4 — YouTube fixes without app updates, licenses, permanent links
+
+- **YouTube fixes arrive by themselves**: the installed app downloads newer
+  yt-dlp versions from PyPI in the background (about 3 MB, SHA-256 verified)
+  and offers a restart to use them. A copy that fails to load is set aside
+  automatically. Settings → Downloader: switch it off, update by hand, or go
+  back to the built-in version. Support: `YouDownloader --update-ytdlp`.
+- **Licenses**: YouDownloader is MIT-licensed. Every build ships full
+  third-party notices (FFmpeg's GPL with links to its exact source, Deno,
+  Python, Tcl/Tk, every Python package): Settings → About & updates →
+  Open-source licenses.
+- **Permanent download links**: each release also carries
+  `YouDownloader-windows-setup.exe`, `-mac-apple-silicon.dmg` and
+  `-mac-intel.dmg`, so `releases/latest/download/<name>` always gets the newest.
+- Restart from inside the app (after a yt-dlp update) waits for the old copy
+  to close first.
+- CI's self-test checks that a downloaded yt-dlp takes precedence inside the
+  packaged app on every platform.
+
 ## Version 5.1.0 — macOS, installers and automatic updates
 
 ### macOS support

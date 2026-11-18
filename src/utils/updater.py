@@ -29,9 +29,9 @@ def ytdlp_age_days(version: Optional[str] = None, today: Optional[date] = None) 
 
 
 def can_update_ytdlp() -> bool:
-    """pip updates only work from source. The packaged app has yt-dlp built in;
-    it gets a fresh one with every app update instead."""
-    return not getattr(sys, "frozen", False)
+    """Always: pip from source; the packaged app downloads a newer copy next to
+    its built-in one (src/utils/ytdlp_override.py)."""
+    return True
 
 
 def _python() -> str:
@@ -40,12 +40,15 @@ def _python() -> str:
 
 def update_ytdlp(timeout: int = 600) -> Tuple[bool, str]:
     """
-    pip-upgrade yt-dlp (with its bundled solver) in this Python environment.
+    Get the newest yt-dlp (with its bundled solver): pip-upgrade it from
+    source, or download it into the app-data folder in the packaged app.
 
     Returns (ok, message). The new version is used after the app restarts.
     """
-    if not can_update_ytdlp():
-        return False, "yt-dlp is built into this app. Update YouDownloader to get a newer one."
+    if getattr(sys, "frozen", False):
+        from src.utils import ytdlp_override
+        ok, msg, _new = ytdlp_override.install()
+        return ok, msg
     before = ytdlp_version()
     cmd = [_python(), "-m", "pip", "install",
            "--disable-pip-version-check", "-U", "yt-dlp[default]"]

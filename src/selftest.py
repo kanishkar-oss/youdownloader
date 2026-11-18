@@ -56,8 +56,50 @@ def run(argv) -> int:
     def imports():
         import customtkinter, yt_dlp, yt_dlp_ejs, PIL, requests  # noqa: F401
         from yt_dlp.version import __version__ as v
-        return f"yt-dlp {v}, customtkinter {customtkinter.__version__}"
+        from src.utils import ytdlp_override
+        st = ytdlp_override.state
+        where = f"downloaded (built-in {st['bundled']})" if st.get("active") else "built in"
+        if st.get("error"):
+            where += f"; a downloaded copy failed to load: {st['error']}"
+        return f"yt-dlp {v} ({where} from {os.path.dirname(yt_dlp.__file__)}), " \
+               f"customtkinter {customtkinter.__version__}"
     check("imports", imports)
+
+    def override():
+        """A downloaded yt-dlp (src/utils/ytdlp_override.py) must win over the
+        built-in one inside the packaged app, and the built-in one must come
+        back cleanly afterwards. Uses a fake package; no network."""
+        import json
+        from src.utils import ytdlp_override as yo
+        import yt_dlp as real
+        real_v = real.version.__version__
+        tmp = tempfile.mkdtemp(prefix="yd-override-test-")
+        root = os.path.join(tmp, "yt-dlp")
+        os.makedirs(os.path.join(root, "yt_dlp"))
+        with open(os.path.join(root, "yt_dlp", "__init__.py"), "w") as f:
+            f.write("from . import version\n")
+        with open(os.path.join(root, "yt_dlp", "version.py"), "w") as f:
+            f.write("__version__ = '2999.01.01'\n")
+        with open(os.path.join(root, yo.INFO_FILE), "w") as f:
+            json.dump({"yt_dlp": "2999.01.01"}, f)
+        saved, meta = dict(yo.state), list(sys.meta_path)
+        try:
+            yo.activate(frozen=True, override_dir=root, bundled=real_v)
+            import yt_dlp as fake
+            picked = fake.version.__version__
+        finally:
+            sys.meta_path[:] = meta
+            yo._purge_modules()
+            yo.state.update(saved)
+            import yt_dlp as again
+            restored = again.version.__version__
+            shutil.rmtree(tmp, ignore_errors=True)
+        if picked != "2999.01.01":
+            raise RuntimeError(f"the downloaded copy wasn't used (got {picked})")
+        if restored != real_v:
+            raise RuntimeError(f"the built-in copy didn't come back (got {restored})")
+        return f"a downloaded yt-dlp is used instead of the built-in {real_v}"
+    check("yt-dlp updates", override)
 
     def icon_font():
         from src.ui import icons

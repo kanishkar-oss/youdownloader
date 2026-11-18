@@ -24,6 +24,16 @@ datas = [
     (os.path.join(ROOT, "assets", "icon.png"), "assets"),
     (os.path.join(ROOT, "assets", "logo.png"), "assets"),
 ]
+# License notices + what this build ships (written by packaging/build.py).
+NOTICES = os.path.join(ROOT, "build", "notices")
+for name in ("THIRD-PARTY-NOTICES.txt", "LICENSE.txt"):
+    if os.path.isfile(os.path.join(NOTICES, name)):
+        datas.append((os.path.join(NOTICES, name), "licenses"))
+    else:
+        print(f"WARNING: {name} missing; run packaging/make_notices.py")
+BUILD_INFO = os.path.join(ROOT, "build", "build_info.json")
+if os.path.isfile(BUILD_INFO):
+    datas.append((BUILD_INFO, "."))
 datas += collect_data_files("customtkinter")
 datas += collect_data_files("yt_dlp_ejs")   # the bundled JS challenge solver
 datas += collect_data_files("certifi")

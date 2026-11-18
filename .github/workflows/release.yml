@@ -113,6 +113,18 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Copies with permanent names (for links that never change)
+        # releases/latest/download/<name> always serves the newest release, so
+        # these names give testers one link per platform forever. The versioned
+        # files stay too: installed apps' updaters look for those.
+        run: |
+          cd dist
+          v="${GITHUB_REF_NAME#v}"
+          for f in YouDownloader-"$v"-windows-setup.exe YouDownloader-"$v"-mac-apple-silicon.dmg YouDownloader-"$v"-mac-intel.dmg; do
+            cp "$f" "${f/-$v/}"
+          done
+          ls -la
+
       - name: Checksums
         run: cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
 

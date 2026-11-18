@@ -123,6 +123,54 @@ def open_path(path: str) -> None:
         subprocess.Popen(["open" if _IS_MAC else "xdg-open", path])
 
 
+def relaunch_after_exit() -> None:
+    """Start a fresh copy of the app that waits for this process to exit
+    first (the single-instance lock would otherwise turn it away). The caller
+    then quits."""
+    pid = str(os.getpid())
+    if getattr(sys, "frozen", False) and _IS_MAC:
+        exe = os.path.abspath(sys.executable)
+        i = exe.find(".app/Contents/MacOS/")
+        cmd = ["/usr/bin/open", "-n", exe[: i + 4], "--args", "--wait-for-pid", pid] if i != -1 \
+            else [exe, "--wait-for-pid", pid]
+    elif getattr(sys, "frozen", False):
+        cmd = [sys.executable, "--wait-for-pid", pid]
+    else:
+        from src.utils import paths
+        cmd = [sys.executable, os.path.join(paths.PROJECT_ROOT, "main.py"), "--wait-for-pid", pid]
+    if _IS_WINDOWS:
+        flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        subprocess.Popen(cmd, creationflags=flags, close_fds=True)
+    else:
+        subprocess.Popen(cmd, start_new_session=True, close_fds=True, stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def wait_for_exit(pid: int, timeout: float = 30) -> None:
+    """Block until process `pid` has exited (or `timeout` seconds pass)."""
+    import time
+    if _IS_WINDOWS:
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(0x00100000, False, int(pid))  # SYNCHRONIZE
+            if handle:
+                kernel32.WaitForSingleObject(handle, int(timeout * 1000))
+                kernel32.CloseHandle(handle)
+        except Exception:
+            pass
+        return
+    end = time.time() + timeout
+    while time.time() < end:
+        try:
+            os.kill(int(pid), 0)
+        except (ProcessLookupError, ValueError):
+            return
+        except PermissionError:
+            pass
+        time.sleep(0.2)
+
+
 def open_url(url: str) -> None:
     import webbrowser
     webbrowser.open(url)

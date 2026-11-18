@@ -51,9 +51,25 @@ def main() -> int:
     # Bundled ffmpeg / ffprobe / deno (packaged app), ~/.deno/bin, Homebrew.
     paths.setup_tool_path()
 
+    if "--wait-for-pid" in argv:  # a restart: let the old copy finish quitting first
+        try:
+            winsys.wait_for_exit(int(argv[argv.index("--wait-for-pid") + 1]))
+        except (IndexError, ValueError):
+            pass
+
+    # Packaged app: use a newer yt-dlp downloaded since this build, if any.
+    # Must run before anything imports yt_dlp.
+    from src.utils import ytdlp_override
+    ytdlp_override.activate()
+
     if "--self-test" in argv:
         from src.selftest import run
         return run(argv)
+
+    if "--update-ytdlp" in argv:  # support: fetch a newer yt-dlp without opening the window
+        ok, msg, _new = ytdlp_override.install()
+        print(msg)
+        return 0 if ok else 1
 
     if paths.IS_WINDOWS:
         try:

@@ -27,7 +27,7 @@ built on yt-dlp. Installers for both, with built-in automatic updates.
 - **Clipboard auto-fill** — copy a YouTube link, switch to the app, and it's filled in and previewed
 - **When done** — Play / Show in folder buttons, and the taskbar button flashes if the app is in the background
 - **Full quality with sign-in** — import a cookies.txt in Settings (see below)
-- **Keeps yt-dlp current** — a banner appears when yt-dlp is over 60 days old; update from Settings in one click
+- **Keeps yt-dlp current** — the installed app downloads new yt-dlp versions (YouTube fixes) in the background; from source, a banner appears when yt-dlp is over 60 days old and Settings updates it in one click
 - **Video preview** — fetch thumbnail, title, channel, and duration before downloading; playlist detection
 - **Live URL check** — a status dot turns green/red as you type
 - **Progress tracking** — real-time percent, speed, and ETA
@@ -77,15 +77,17 @@ A dark, minimal "space" design:
 
 ## Download (Windows and macOS)
 
-Get the latest version from the
-[**Releases page**](https://github.com/kanishkar-oss/youdownloader/releases/latest).
-FFmpeg and Deno come built in; there's nothing else to install.
+These links always download the newest version. FFmpeg and Deno come built in;
+there's nothing else to install.
 
-| System | File |
+| System | Download |
 | --- | --- |
-| Windows 10 / 11 (64-bit) | `YouDownloader-<version>-windows-setup.exe` |
-| Mac with Apple Silicon (M1 and newer), macOS 12+ | `YouDownloader-<version>-mac-apple-silicon.dmg` |
-| Mac with an Intel chip, macOS 12+ | `YouDownloader-<version>-mac-intel.dmg` |
+| Windows 10 / 11 (64-bit) | [YouDownloader-windows-setup.exe](https://github.com/kanishkar-oss/youdownloader/releases/latest/download/YouDownloader-windows-setup.exe) |
+| Mac with Apple Silicon (M1 and newer), macOS 12+ | [YouDownloader-mac-apple-silicon.dmg](https://github.com/kanishkar-oss/youdownloader/releases/latest/download/YouDownloader-mac-apple-silicon.dmg) |
+| Mac with an Intel chip, macOS 12+ | [YouDownloader-mac-intel.dmg](https://github.com/kanishkar-oss/youdownloader/releases/latest/download/YouDownloader-mac-intel.dmg) |
+
+All versions and release notes are on the
+[Releases page](https://github.com/kanishkar-oss/youdownloader/releases).
 
 Not sure which Mac you have? Apple menu → About This Mac → "Chip" (Apple M…) or
 "Processor" (Intel).
@@ -109,6 +111,15 @@ there is one. **Update** downloads it, checks its SHA-256, installs it and
 restarts the app; settings, queue and sign-in are kept. It waits until no
 download is running. Turn the check off, or check by hand, in **Settings →
 About & updates**.
+
+**YouTube fixes arrive on their own.** When YouTube changes something, yt-dlp
+(the download engine) usually ships a fix within days. The installed app checks
+PyPI on launch and downloads a newer yt-dlp in the background (about 3 MB,
+SHA-256 verified), and a banner offers **Restart** to start using it. If the new
+copy ever fails to load, the app falls back to its built-in version by itself.
+Turn this off, update by hand, or go back to the built-in version in
+**Settings → Downloader**. The downloaded copy is in the app data folder
+(`yt-dlp/`); an app update that ships the same or a newer yt-dlp removes it.
 
 On a Mac the app must be in a folder you can write to (Applications is fine)
 to update itself; run from the disk image or somewhere read-only, it offers the
@@ -141,9 +152,9 @@ and tests the files testers will download:
   the unzipped app, and runs the update swap script against a copy (a normal
   update, the app still running, and no write permission).
 
-Every build installs the newest yt-dlp, so YouTube fixes reach testers
-through app updates. Cut a release every month or two even without code
-changes.
+Installed apps fetch new yt-dlp versions themselves, so you only need a
+release for app changes. Each build also bundles the newest yt-dlp, so new
+installs start current.
 
 Nothing is published unless all three builds succeed. GitHub sometimes has no
 Apple Silicon Mac free ("The job was not acquired by Runner"); the
@@ -281,6 +292,7 @@ YouDownload/
 │   │   ├── cookies.py         # cookies.txt import + validity check
 │   │   ├── updater.py         # yt-dlp age check / self-update (source installs)
 │   │   ├── app_update.py      # App self-update from GitHub Releases
+│   │   ├── ytdlp_override.py  # Installed app: newer yt-dlp from PyPI, used ahead of the built-in one
 │   │   ├── paths.py           # Where config/logs/resources live (source vs installed)
 │   │   ├── winsys.py          # Single instance, taskbar flash / Dock bounce, reveal, title bar
 │   │   ├── files.py           # Safe rename of downloads (+ subtitle sidecars)
@@ -288,7 +300,8 @@ YouDownload/
 │   └── models/
 │       └── download.py        # Download item model
 ├── tests/                     # Unit tests
-├── packaging/                 # PyInstaller spec, Inno Setup script, build + tool fetch scripts
+├── packaging/                 # PyInstaller spec, Inno Setup script, build, tool fetch, license notices
+├── LICENSE, THIRD-PARTY-NOTICES.md  # MIT; bundled third-party software
 ├── scripts/release.ps1/.sh    # Cut a release (bump version, tag, push)
 ├── .github/workflows/         # CI: build Windows + Mac, publish GitHub Release
 ├── config/                    # settings.json, queue.json (from source; not committed)
@@ -348,7 +361,10 @@ Levels: DEBUG, INFO, WARNING, ERROR, CRITICAL.
 
 ## License
 
-Provided as-is for personal use.
+MIT, see [LICENSE](LICENSE). The installers also include third-party software
+under its own licenses (FFmpeg under the GPL, Deno, Python and others): see
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). The full notices ship inside
+the app, under **Settings → About & updates → Open-source licenses**.
 
 ## Credits
 

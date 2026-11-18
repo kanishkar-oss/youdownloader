@@ -53,6 +53,9 @@ class Config:
         "skipped_update_version": None,
         # Set just before an update installs; the next launch checks it took.
         "pending_update_version": None,
+        # Packaged app: download newer yt-dlp versions (YouTube fixes) in the
+        # background; used from the next launch.
+        "auto_update_ytdlp": True,
     }
 
     def __init__(self, config_dir: Optional[str] = None):
