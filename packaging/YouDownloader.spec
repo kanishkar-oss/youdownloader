@@ -48,6 +48,19 @@ for tool in ("ffmpeg", "ffprobe", "deno"):
 
 hiddenimports = collect_submodules("yt_dlp_ejs") + ["darkdetect"]
 
+# The whole standard library, not just what today's yt-dlp imports: the app
+# downloads newer yt-dlp versions by itself (src/utils/ytdlp_override.py), and
+# those may use modules this build's yt-dlp didn't. Costs a few MB.
+from src.stdlib_list import stdlib_names  # noqa: E402
+_stdlib = stdlib_names()
+hiddenimports += _stdlib
+for _pkg in _stdlib:
+    if _pkg in ("email", "xml", "json", "http", "urllib", "html", "concurrent", "asyncio", "ctypes",
+                "sqlite3", "logging", "importlib", "encodings", "zoneinfo", "wsgiref", "xmlrpc", "dbm",
+                "collections", "multiprocessing", "curses", "unittest"):
+        hiddenimports += collect_submodules(_pkg, filter=lambda n: ".test" not in n)
+print(f"Bundling {len(_stdlib)} standard library modules")
+
 a = Analysis(
     [os.path.join(ROOT, "main.py")],
     pathex=[ROOT],

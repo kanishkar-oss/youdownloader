@@ -25,7 +25,9 @@ built on yt-dlp. Installers for both, with built-in automatic updates.
 - **Playlists** — `/playlist?list=…` links ask first, then save into their own folder, numbered in order
 - **Paste list…** — add many links to the queue at once
 - **Clipboard auto-fill** — copy a YouTube link, switch to the app, and it's filled in and previewed
-- **When done** — Play / Show in folder buttons, and the taskbar button flashes if the app is in the background
+- **Drag and drop** — drop a link (from a browser's address bar or tab, or a .url/.webloc link file) anywhere on the window
+- **When done** — Play / Show in folder buttons; if the app is in the background, a desktop notification and a taskbar flash / Dock bounce (notifications can be turned off in Settings → Interface)
+- **Copy diagnostics** — Settings → About & updates copies versions, settings and recent log lines (never cookies) for a bug report
 - **Full quality with sign-in** — import a cookies.txt in Settings (see below)
 - **Keeps yt-dlp current** — the installed app downloads new yt-dlp versions (YouTube fixes) in the background; from source, a banner appears when yt-dlp is over 60 days old and Settings updates it in one click
 - **Video preview** — fetch thumbnail, title, channel, and duration before downloading; playlist detection

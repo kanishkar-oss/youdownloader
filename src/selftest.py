@@ -101,6 +101,22 @@ def run(argv) -> int:
         return f"a downloaded yt-dlp is used instead of the built-in {real_v}"
     check("yt-dlp updates", override)
 
+    def stdlib():
+        """Every standard-library module is in the build (future yt-dlp
+        versions downloaded by the app may need ones today's doesn't)."""
+        from src.stdlib_list import stdlib_names
+        if not paths.FROZEN:
+            return "from source (the full standard library is available)"
+        import importlib.util
+        names = stdlib_names()  # find_spec against the frozen importer
+        wanted = {"sqlite3", "zoneinfo", "tomllib", "xml.etree.ElementTree", "http.cookiejar", "asyncio",
+                  "concurrent.futures", "email.utils", "unicodedata", "lzma", "bz2", "zipfile", "ssl", "hmac"}
+        missing = sorted(n for n in wanted if importlib.util.find_spec(n) is None)
+        if missing:
+            raise RuntimeError(f"missing from the build: {', '.join(missing)}")
+        return f"{len(names)} modules available"
+    check("standard library", stdlib)
+
     def icon_font():
         from src.ui import icons
         if not icons.available():
@@ -114,9 +130,14 @@ def run(argv) -> int:
         root = customtkinter.CTk()
         root.withdraw()
         family = init_fonts(root)
+        # Drag and drop: tkdnd loads and a drop target can be registered.
+        from tkinterdnd2 import TkinterDnD, DND_TEXT, DND_FILES
+        dnd = TkinterDnD.require(root)
+        frame = customtkinter.CTkFrame(root)
+        frame.drop_target_register(DND_TEXT, DND_FILES)
         root.update()
         root.destroy()
-        return f"Tk ok, font {family}"
+        return f"Tk ok, font {family}, drag and drop (tkdnd {dnd})"
     check("tk", tk)
 
     if url:

@@ -683,6 +683,11 @@ class SettingsDialog:
         right, _ = row(c, "Motion", "Twinkling stars, orbit and button transitions.")
         switch(right, "visual_effects_enabled", True)
         divider(c)
+        right, _ = row(c, "Notify when downloads finish",
+                       "A desktop notification when a download or the queue is done while the app "
+                       "is in the background.")
+        switch(right, "notifications_enabled", True)
+        divider(c)
         right, _ = row(c, "Setup notices", "Show dismissed FFmpeg / Deno / yt-dlp notices again.")
 
         def reshow():
@@ -732,6 +737,26 @@ class SettingsDialog:
         divider(c)
         right, _ = row(c, "Check automatically", "Look for a new version each time the app opens.")
         switch(right, "auto_check_updates", True)
+        divider(c)
+        right, report_lbl = row(c, "Report a problem",
+                                "Copies app and system details plus recent log lines (never cookies or "
+                                "passwords). Paste it into your message.")
+
+        def copy_diagnostics():
+            from src.utils import diagnostics
+            try:
+                diagnostics.copy_to_clipboard(parent)
+            except Exception as e:
+                ErrorDialog.show(d.top, "Couldn't copy the details", str(e))
+                return
+            diag_btn.configure(text="Copied")
+            if report_lbl:
+                report_lbl.configure(text="Copied to the clipboard. Paste it into your message, with what you "
+                                          "did and the YouTube link.")
+            d.top.after(2500, lambda: diag_btn.winfo_exists() and diag_btn.configure(text="Copy diagnostics"))
+        diag_btn = SecondaryButton(right, P, text="Copy diagnostics", icon="copy", width=176,
+                                   height=HEIGHT.button_sm, command=copy_diagnostics)
+        diag_btn.pack()
         divider(c)
         right, _ = row(c, "Open-source licenses", "YouDownloader is MIT-licensed and includes FFmpeg, "
                                                   "Deno, Python and other open-source software.")

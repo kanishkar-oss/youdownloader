@@ -1,5 +1,20 @@
 # Changelog - YouDownloader
 
+## Version 5.1.5 — drag and drop, notifications, diagnostics
+
+- **Drag a link onto the window** (from a browser's address bar or tab, or a
+  .url / .webloc file): it goes into the link box and is previewed.
+- **Desktop notifications** when a download or the queue finishes (or a
+  download fails) while the app is in the background. Settings → Interface.
+- **Copy diagnostics** (Settings → About & updates → Report a problem):
+  versions, tools, settings and recent log lines, home folder shortened, never
+  cookies, ready to paste into a bug report.
+- The packaged app bundles the whole Python standard library, so yt-dlp
+  versions the app downloads later can't trip over a missing module; the
+  self-test checks it on every platform.
+- The installer registers the app's notification identity on its Start Menu
+  shortcut.
+
 ## Version 5.1.4 — YouTube fixes without app updates, licenses, permanent links
 
 - **YouTube fixes arrive by themselves**: the installed app downloads newer

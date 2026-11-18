@@ -50,6 +50,41 @@ from src.models.download import DownloadItem, DownloadStatus
 
 logger = get_logger()
 
+# Drag a link onto the window (tkdnd via tkinterdnd2). Optional: without it
+# the app works as before.
+try:
+    from tkinterdnd2 import TkinterDnD, DND_FILES, DND_TEXT
+    _DnDMixin = TkinterDnD.DnDWrapper
+except Exception:  # pragma: no cover - missing or broken install
+    TkinterDnD = None
+    _DnDMixin = object
+
+
+def links_from_drop(data: str, splitlist=None) -> list:
+    """YouTube-looking links in dropped data: plain text / URLs, or dropped
+    .url (Windows) / .webloc (macOS) link files."""
+    import re
+    text = (data or "").strip()
+    urls = re.findall(r"https?://[^\s{}\"'<>]+", text)
+    if urls:
+        return urls
+    paths = splitlist(text) if splitlist else text.split()
+    for path in paths:
+        try:
+            if path.lower().endswith(".url"):
+                with open(path, encoding="utf-8", errors="replace") as f:
+                    urls += [ln.split("=", 1)[1].strip() for ln in f if ln.upper().startswith("URL=")]
+            elif path.lower().endswith(".webloc"):
+                import plistlib
+                with open(path, "rb") as f:
+                    url = plistlib.load(f).get("URL")
+                if url:
+                    urls.append(url)
+        except (OSError, ValueError):
+            continue
+    return urls
+
+
 _STATUS_ICON = {
     DownloadStatus.PENDING: ("clock", "text_secondary"),
     DownloadStatus.DOWNLOADING: ("download", "accent_hover"),
@@ -60,7 +95,7 @@ _STATUS_ICON = {
 }
 
 
-class YouDownloaderApp(customtkinter.CTk):
+class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
     """Main application window"""
 
     def __init__(self):
@@ -74,7 +109,7 @@ class YouDownloaderApp(customtkinter.CTk):
         ytdlp_source = "updated in the app" if ytdlp_override.state.get("active") else "built in"
         self.logger.info(f"Starting YouDownloader v{__version__} ({sys.platform}"
                          f"{', packaged' if paths.FROZEN else ', from source'}, "
-                         f"yt-dlp {updater.ytdlp_version()} {ytdlp_source if paths.FROZEN else ''}, "
+                         f"yt-dlp {updater.ytdlp_version()}{' ' + ytdlp_source if paths.FROZEN else ''}, "
                          f"font {self.font_family})")
         if ytdlp_override.state.get("error"):
             self.logger.warning(f"The downloaded yt-dlp failed to load and was set aside; using the "
@@ -162,6 +197,7 @@ class YouDownloaderApp(customtkinter.CTk):
 
         self.create_ui()
         self.setup_shortcuts()
+        self._setup_drag_and_drop()
         self.bind("<FocusIn>", self._on_window_focus, add="+")
 
         self.refresh_queue_display()
@@ -469,6 +505,53 @@ class YouDownloaderApp(customtkinter.CTk):
         self.bind("<F5>", lambda e: self.fetch_video_info())
         self.focus_set()
 
+    def _setup_drag_and_drop(self) -> None:
+        """Drop a link (from a browser's address bar, a tab, or a link file)
+        anywhere on the window: it goes into the link box and is previewed."""
+        self.dnd_available = False
+        if TkinterDnD is None:
+            return
+        try:
+            TkinterDnD.require(self)
+            self.drop_target_register(DND_TEXT, DND_FILES)
+            self.dnd_bind("<<DropEnter>>", self._on_drop_enter)
+            self.dnd_bind("<<DropLeave>>", self._on_drop_leave)
+            self.dnd_bind("<<Drop>>", self._on_drop)
+            self.dnd_available = True
+        except Exception as e:
+            self.logger.info(f"Drag and drop unavailable: {e}")
+
+    def _on_drop_enter(self, event):
+        try:
+            self._url_row.configure(border_color=self.palette.accent)
+        except Exception:
+            pass
+        return event.action
+
+    def _on_drop_leave(self, event):
+        try:
+            self._url_row.configure(border_color=self.palette.border_strong)
+        except Exception:
+            pass
+        return event.action
+
+    def _on_drop(self, event):
+        self._on_drop_leave(event)
+        links = [u for u in links_from_drop(event.data, self.tk.splitlist) if validate_youtube_url(u)[0]]
+        if not links:
+            if not self.is_downloading:
+                self.progress_display.set_status("That isn't a YouTube link", self.palette.warning)
+            return event.action
+        self.url_entry.delete(0, "end")
+        self.url_entry.insert(0, links[0])
+        self._update_url_validity()
+        if not self.is_downloading:
+            self.fetch_video_info()
+        if len(links) > 1 and not self.is_downloading:
+            self.progress_display.set_status(f"Dropped {len(links)} links: the first is in the link box. "
+                                             "Use Paste list to queue them all.", self.palette.text_secondary)
+        return event.action
+
     def _check_js_runtime(self) -> bool:
         # main.py ran paths.setup_tool_path(): bundled deno and ~/.deno/bin are on PATH.
         return any([shutil.which('deno'), shutil.which('node'), shutil.which('bun')])
@@ -537,7 +620,8 @@ class YouDownloaderApp(customtkinter.CTk):
         customtkinter.CTkLabel(bar, text="" if link_icon else "↗", image=link_icon, width=24).pack(
             side="left", padx=(SPACING.md + 2, SPACING.xs))
         self.url_entry = FieldEntry(bar, p, border_width=0, fg_color=p.surface_raised, font=TYPE.body_lg,
-                                    placeholder_text="Paste a YouTube link", height=HEIGHT.url_bar - 12)
+                                    placeholder_text=("Paste or drop a YouTube link" if TkinterDnD else "Paste a YouTube link"),
+                                    height=HEIGHT.url_bar - 12)
         self.url_entry.pack(side="left", fill="x", expand=True)
         self.url_entry.bind("<FocusIn>", lambda e: bar.configure(border_color=p.accent), add="+")
         self.url_entry.bind("<FocusOut>", lambda e: bar.configure(border_color=p.border_strong), add="+")
@@ -1152,6 +1236,19 @@ class YouDownloaderApp(customtkinter.CTk):
             self.result_actions.pack(anchor="w", pady=(SPACING.md, 0))
         self._clear_per_download_fields()
         winsys.flash_taskbar(self)
+        self._notify("Download finished", name if files else "Your download is ready.")
+
+    def _notify(self, title: str, body: str) -> None:
+        """Desktop notification, only when the app is in the background."""
+        if not self.config.get("notifications_enabled", True):
+            return
+        try:
+            if self.focus_displayof() is not None:
+                return  # they're looking at it
+        except Exception:
+            pass
+        from src.utils import notify
+        notify.notify(title, body)
 
     def _open_last_file(self) -> None:
         files = self._existing_last_files()
@@ -1194,6 +1291,7 @@ class YouDownloaderApp(customtkinter.CTk):
         self.cleanup_download()
         self.progress_display.reset()
         self.progress_display.set_status("Download failed", self.palette.error)
+        self._notify("Download failed", error_msg.splitlines()[0][:120] if error_msg else "Open YouDownloader for details.")
         ErrorDialog.show(self, "Download failed", error_msg)
 
     def stop_download(self) -> None:
@@ -1227,6 +1325,9 @@ class YouDownloaderApp(customtkinter.CTk):
         needs = [i for i in pending if FormatManager.needs_ffmpeg(i.format)]
         if needs and not self._check_ffmpeg_for(needs[0].format):
             return
+        # Items already finished before this run don't count in the "Queue finished" note.
+        self._queue_finished_before = {id(i) for i in self.queue.get_all()
+                                       if i.status in (DownloadStatus.COMPLETED, DownloadStatus.FAILED)}
         self.queue.start()
         self.refresh_queue_display()
         self._update_queue_button()
@@ -1421,6 +1522,11 @@ class YouDownloaderApp(customtkinter.CTk):
             running = self.queue.is_running()
             if self._queue_was_running and not running and not self.queue.get_pending():
                 winsys.flash_taskbar(self)
+                before = getattr(self, "_queue_finished_before", set())
+                items = [i for i in self.queue.get_all() if id(i) not in before]
+                failed = sum(1 for i in items if i.status == DownloadStatus.FAILED)
+                done = sum(1 for i in items if i.status == DownloadStatus.COMPLETED)
+                self._notify("Queue finished", f"{done} downloaded" + (f", {failed} failed" if failed else "") + ".")
             self._queue_was_running = running
             self._update_queue_button()
         except Exception as e:

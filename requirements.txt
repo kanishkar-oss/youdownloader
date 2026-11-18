@@ -6,3 +6,5 @@ customtkinter>=5.2.0,<6
 yt-dlp[default]>=2026.10.26
 Pillow>=10.0.0,<12
 requests>=2.31.0,<3
+# Drag a link onto the window (tkdnd; bundles the native library for each OS).
+tkinterdnd2>=0.7.0,<0.8
