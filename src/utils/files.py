@@ -5,6 +5,13 @@ from typing import List, Optional, Tuple
 from src.utils.validators import validate_filename
 
 
+def _same_file(a: str, b: str) -> bool:
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return os.path.normcase(a) == os.path.normcase(b)
+
+
 def rename_download(path: str, new_name: str) -> Tuple[Optional[str], Optional[str]]:
     """
     Rename `path` to `new_name` (keeping its extension and folder). Sidecar files
@@ -28,8 +35,9 @@ def rename_download(path: str, new_name: str) -> Tuple[Optional[str], Optional[s
             moves.append((os.path.join(folder, other), os.path.join(folder, clean + other[len(stem):])))
 
     for src, dst in moves:
-        # Case-only renames ("song" -> "Song") are fine on Windows.
-        if os.path.exists(dst) and os.path.normcase(dst) != os.path.normcase(src):
+        # Case-only renames ("song" -> "Song") are fine: on case-insensitive
+        # disks (Windows, default macOS APFS) dst "exists" but is the same file.
+        if os.path.exists(dst) and not _same_file(src, dst):
             return None, f"“{os.path.basename(dst)}” already exists in that folder"
     done: List[Tuple[str, str]] = []
     try:

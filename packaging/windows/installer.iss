@@ -43,9 +43,11 @@ OutputBaseFilename={#AppName}-{#AppVersion}-windows-setup
 SetupIconFile=..\..\assets\youdownloader.ico
 UninstallDisplayIcon={app}\{#AppName}.exe
 UninstallDisplayName={#AppName}
-Compression=lzma2/ultra64
+; lzma2/ultra64 with several block threads ran ISCC out of memory on ~400 MB
+; of files; /max in a separate (64-bit) compressor process is nearly as small.
+Compression=lzma2/max
 SolidCompression=yes
-LZMANumBlockThreads=4
+LZMAUseSeparateProcess=yes
 WizardStyle=modern
 CloseApplications=yes
 RestartApplications=no
