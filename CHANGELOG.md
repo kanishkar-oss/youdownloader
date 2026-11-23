@@ -1,6 +1,6 @@
 # Changelog - YouDownloader
 
-## Unreleased — one Downloads list
+## Version 5.2.0 — one Downloads list, clearer design
 
 - **One Downloads list** replaces the status panel and the queue. **Download** adds
   the link to the list and starts it, or queues it behind what's downloading, so you
