@@ -171,5 +171,74 @@ class TestQueueCancel(unittest.TestCase):
             time.sleep(0.2)  # let async saves land before the temp dir goes
 
 
+class TestDownloadsList(unittest.TestCase):
+    """The one Downloads list: held items, start-next, pause."""
+
+    def _queue(self, d):
+        return DownloadQueue(os.path.join(d, "queue.json"))
+
+    def test_held_items_wait_until_started(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d, \
+                mock.patch("src.downloader.queue.DownloadEngine", _FakeEngine):
+            q = self._queue(d)
+            held = DownloadItem(url="https://youtu.be/held", status=DownloadStatus.PAUSED)
+            q.add(held)
+            self.assertFalse(q.start())  # nothing pending: held items don't start by themselves
+            self.assertEqual(held.status, DownloadStatus.PAUSED)
+            self.assertEqual(len(q.get_waiting()), 1)
+            self.assertTrue(q.start_all())
+            self.assertEqual(held.status, DownloadStatus.DOWNLOADING)
+            q.stop()
+            q._download_thread.join(timeout=5)
+            time.sleep(0.2)
+
+    def test_start_item_jumps_ahead_of_other_waiting_items(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d, \
+                mock.patch("src.downloader.queue.DownloadEngine", _FakeEngine):
+            q = self._queue(d)
+            a, b, c = (DownloadItem(url=f"https://youtu.be/{x}") for x in "abc")
+            for it in (a, b, c):
+                q.add(it)
+            self.assertTrue(q.start())          # a downloads
+            self.assertTrue(q.start_item(c))    # c is next, ahead of b
+            self.assertEqual([i.url[-1] for i in q.get_pending()], ["c", "b"])
+            self.assertIs(q.current, a)
+            q.stop()
+            q._download_thread.join(timeout=5)
+            time.sleep(0.2)
+
+    def test_pause_puts_the_current_item_back_to_waiting(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d, \
+                mock.patch("src.downloader.queue.DownloadEngine", _FakeEngine):
+            q = self._queue(d)
+            q.add(DownloadItem(url="https://youtu.be/a"))
+            q.add(DownloadItem(url="https://youtu.be/b"))
+            self.assertTrue(q.start())
+            time.sleep(0.05)
+            q.pause()
+            q._download_thread.join(timeout=5)
+            items = q.get_all()
+            self.assertEqual(items[0].status, DownloadStatus.PENDING)  # not "Cancelled"
+            self.assertEqual(items[0].progress, 0.0)
+            self.assertEqual(items[1].status, DownloadStatus.PENDING)
+            self.assertFalse(q.is_running())
+            self.assertTrue(q.is_paused())
+            self.assertTrue(q.start())  # resumes from the paused item
+            self.assertIs(q.current, items[0])
+            q.cancel_current()  # a row's Stop: that one is Cancelled, the list moves on
+            q._download_thread.join(timeout=5)
+            self.assertEqual(items[0].status, DownloadStatus.CANCELLED)
+            q.stop()
+            time.sleep(0.2)
+
+    def test_file_count_round_trips(self):
+        item = DownloadItem(url="https://youtu.be/a", file_path="x.mp4", file_count=12)
+        self.assertEqual(DownloadItem.from_dict(item.to_dict()).file_count, 12)
+        # Older queue files have no file_count: one file if there's a path.
+        data = item.to_dict()
+        del data["file_count"]
+        self.assertEqual(DownloadItem.from_dict(data).file_count, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -15,7 +15,7 @@ built on yt-dlp. Installers for both, with built-in automatic updates.
   re-encoding: the best quality there is), MP3 (320 or 128 kbps) or WAV
   (16-bit/44.1 kHz CD, 16-bit at the original rate, or 24-bit/48 kHz). YouTube
   audio is lossy at the source, so WAV is for editing convenience, not extra fidelity.
-- **Download queue** — queue links, process sequentially (Start / Stop), persisted across restarts; per-item retry / remove / reveal-in-folder via an overflow (⋯) menu
+- **One Downloads list** — **Download** adds a link and starts it (or queues it behind what's downloading); **Add for later** adds it without starting. Every row shows its own progress, speed and time left, then Play / Show in folder when it's done, or the reason and **Retry** when it fails. **Pause all** / **Start all**, a play button to download any row next, and a ⋯ menu (rename, copy link, error details, remove). Finished downloads stay listed across restarts until **Clear finished**
 - **Single video from playlist links** — a `watch?v=…&list=…` link (e.g. from a Mix) downloads just that video; `/playlist?list=…` links download the playlist
 - **File names** — type a name before downloading (blank = the video title), or
   **Rename** afterwards from the finished download or a queue row's ⋯ menu.
@@ -24,15 +24,15 @@ built on yt-dlp. Installers for both, with built-in automatic updates.
 - **Cover art & tags** — title / artist / date (and chapters for video) embedded; cover art in MP3 and MP4
 - **Subtitles** — optional `.srt` subtitles in your language (Settings)
 - **Playlists** — `/playlist?list=…` links ask first, then save into their own folder, numbered in order
-- **Paste list…** — add many links to the queue at once
+- **Paste list…** — download many links at once
 - **Clipboard auto-fill** — copy a YouTube link, switch to the app, and it's filled in and previewed
 - **Drag and drop** — drop a link (from a browser's address bar or tab, or a .url/.webloc link file) anywhere on the window
 - **Browser button** — a "Send to YouDownloader" bookmark (Settings → Downloads → Browser button) sends the video you're watching to the app in one click, in any browser, through `youdownloader://` links the installed app registers
-- **When done** — Play / Show in folder buttons; if the app is in the background, a desktop notification and a taskbar flash / Dock bounce (notifications can be turned off in Settings → Interface)
+- **When done** — Play / Show in folder on the row; if the app is in the background, a desktop notification and a taskbar flash / Dock bounce (notifications can be turned off in Settings → Interface)
 - **Copy diagnostics** — Settings → About & updates copies versions, settings and recent log lines (never cookies) for a bug report
 - **Full quality with sign-in** — import a cookies.txt in Settings (see below)
 - **Keeps yt-dlp current** — the installed app downloads new yt-dlp versions (YouTube fixes) in the background; from source, a banner appears when yt-dlp is over 60 days old and Settings updates it in one click
-- **Video preview** — fetch thumbnail, title, channel, and duration before downloading; playlist detection
+- **Video preview** — a valid link shows its thumbnail, title, channel and duration by itself; playlist detection. Problems with the link are explained right under the link box
 - **Live URL check** — a status dot turns green/red as you type
 - **Progress tracking** — real-time percent, speed, and ETA
 
@@ -68,7 +68,7 @@ A dark, minimal "space" design:
 - **Themed menus and dialogs**: dropdowns, row menus and right-click menus are
   custom popups (not native menus); every dialog shares one style with
   Esc / Enter support. Right-click (or Control-click on a Mac) works in text fields.
-- **Keyboard shortcuts:** `Ctrl+D` download · `Ctrl+S` stop · `Ctrl+O` folder ·
+- **Keyboard shortcuts:** `Ctrl+D` download · `Ctrl+S` stop the current download · `Ctrl+O` folder ·
   `Ctrl+,` settings · `F5` preview · `Enter` in the link box previews · `Ctrl+Q` quit.
   On macOS use ⌘ instead of Ctrl (⌘, opens Settings, ⌘Q quits).
 
@@ -244,12 +244,12 @@ Settings, or:
 
 ## Usage
 
-1. Paste a YouTube link — the validity dot confirms it's recognized.
-2. (Optional) Click **Preview** to fetch the title, channel, duration, and thumbnail.
-3. Choose a format (MP4 / MOV video, MP3 / WAV audio) and quality.
-4. Pick a save location.
-5. Click **Download** to start now, or **Add to Queue** to batch it. Use **Start**
-   in the Queue panel to process pending items.
+1. Paste a YouTube link: it's checked and previewed (title, channel, duration, thumbnail).
+2. Choose a format (MP4 / MOV video, MP3 / M4A / WAV audio) and quality.
+3. Pick a save location.
+4. Click **Download**: it appears in the Downloads list and starts (or waits for the
+   one before it). **Add for later** puts it in the list without starting; press its
+   play button or **Start** when you're ready.
 
 ## Tests
 

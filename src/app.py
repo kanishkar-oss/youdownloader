@@ -16,7 +16,7 @@ import shutil
 import sys
 import threading
 import tkinter.filedialog
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import customtkinter
 
@@ -32,7 +32,7 @@ from src.ui import icons
 from src.ui.tokens import (SPACING, RADIUS, BORDER, HEIGHT, TYPE, MOTION, CONTENT_MAX_WIDTH,
                            CONTENT_GUTTER, init_fonts, tracked)
 from src.ui.palettes import SPACE
-from src.ui.components import ProgressDisplay, set_window_icon
+from src.ui.components import set_window_icon
 from src.ui.widgets.banner import InlineBanner
 from src.ui.widgets.buttons import PrimaryButton, SecondaryButton, GhostButton, IconButton
 from src.ui.widgets.entry import FieldEntry, SelectButton
@@ -106,13 +106,19 @@ def links_from_drop(data: str, splitlist=None) -> list:
     return urls
 
 
+def _mix_hex(a: str, b: str, t: float) -> str:
+    ra = [int(a.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4)]
+    rb = [int(b.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4)]
+    return "#%02X%02X%02X" % tuple(round(ra[i] + (rb[i] - ra[i]) * t) for i in range(3))
+
+
 _STATUS_ICON = {
     DownloadStatus.PENDING: ("clock", "text_secondary"),
     DownloadStatus.DOWNLOADING: ("download", "accent_hover"),
     DownloadStatus.COMPLETED: ("check", "success"),
     DownloadStatus.FAILED: ("error", "error"),
     DownloadStatus.CANCELLED: ("close", "text_tertiary"),
-    DownloadStatus.PAUSED: ("clock", "text_secondary"),
+    DownloadStatus.PAUSED: ("clock", "text_tertiary"),
 }
 
 
@@ -205,23 +211,18 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
         self.download_path = self.config.get("download_path") or Config.DEFAULT_CONFIG["download_path"]
         self.current_format = FormatManager.normalize_mode(self.config.get("format"))
         self.current_quality = FormatManager.normalize_quality(self.current_format, self.config.get("quality"))
-        self.is_downloading = False
-        self.cancelled = False
-        self._download_token = 0
-        self._download_opts: Dict[str, Any] = {}
         self._queue_dirty = False
         self._queue_was_running = False
         self._queue_rows: Dict[int, Dict[str, Any]] = {}
         self._queue_signature = None
-        self.last_files: list = []
         self._last_autofill: Optional[str] = None
         self._link_message_for: Optional[str] = None  # the link the message under the link box is about
         self._link_message_shown = False
+        self._link_message_tone = "error"
         self._auto_preview_job = None
         self._previewed_url: Optional[str] = None
         self.download_state = "idle"
-        self.ydl_instance: Optional[DownloadEngine] = None
-        self.download_thread_ref: Optional[threading.Thread] = None
+        self._run_before: set = set()  # ids of items already finished when the list last started
         self.cached_video_info: Optional[Dict[str, Any]] = None
         self.info_fetch_thread: Optional[threading.Thread] = None
 
@@ -249,6 +250,11 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
             self.after(9000, self._auto_update_ytdlp)
 
     # ===== platform =========================================================
+
+    @property
+    def is_downloading(self) -> bool:
+        queue = getattr(self, "queue", None)
+        return bool(queue and queue.is_running())
 
     def _setup_mac_app(self) -> None:
         """macOS app-menu hooks: Quit (⌘Q) saves state like closing the window,
@@ -406,7 +412,7 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
 
     def _on_window_focus(self, event) -> None:
         """Auto-fill a copied YouTube link when the link box is empty."""
-        if event.widget is not self or self.is_downloading:
+        if event.widget is not self:
             return
         try:
             if self.url_entry.get().strip():
@@ -501,11 +507,6 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
 
     def rebuild_ui(self) -> None:
         """Re-create the window contents (used when setup notices are re-shown)."""
-        if hasattr(self, "progress_display"):
-            try:
-                self.progress_display.reset()
-            except Exception:
-                pass
         url = self.url_entry.get() if hasattr(self, "url_entry") else ""
         loc = self.location_entry.get() if hasattr(self, "location_entry") else self.download_path
         for child in list(self.grid_slaves()):
@@ -520,7 +521,7 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
         except Exception:
             pass
         self.refresh_queue_display()
-        self._set_primary_state(self.download_state)
+        self._set_primary_state("idle")
 
     def apply_palette(self, name: str) -> None:
         """Kept for compatibility; there is a single dark palette now."""
@@ -531,7 +532,7 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
         # menu (see _setup_mac_app), so they aren't bound here.
         mod = "Command" if paths.IS_MAC else "Control"
         self.bind(f"<{mod}-d>", lambda e: self.start_download())
-        self.bind(f"<{mod}-s>", lambda e: self.stop_download())
+        self.bind(f"<{mod}-s>", lambda e: self.stop_current())
         self.bind(f"<{mod}-o>", lambda e: self.browse_folder())
         if not paths.IS_MAC:
             self.bind("<Control-q>", lambda e: self.on_closing())
@@ -577,17 +578,15 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
             # (shows up in Copy diagnostics).
             self.logger.info(f"Drop without a YouTube link: type={getattr(event, 'type', '?')!r} "
                              f"offered={getattr(event, 'types', '?')!r} data={str(event.data)[:200]!r}")
-            if not self.is_downloading:
-                self.progress_display.set_status("That isn't a YouTube link", self.palette.warning)
+            self._show_link_message("That isn't a YouTube link.")
             return event.action
         self.url_entry.delete(0, "end")
         self.url_entry.insert(0, links[0])
         self._update_url_validity()
-        if not self.is_downloading:
-            self.fetch_video_info()
-        if len(links) > 1 and not self.is_downloading:
-            self.progress_display.set_status(f"Dropped {len(links)} links: the first is in the link box. "
-                                             "Use Paste list to queue them all.", self.palette.text_secondary)
+        self.fetch_video_info()
+        if len(links) > 1:
+            self._show_link_message(f"Dropped {len(links)} links: the first is in the link box. "
+                                    "Use Paste list to download them all.", tone="info")
         return event.action
 
     def _check_js_runtime(self) -> bool:
@@ -611,12 +610,12 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
         self.page.grid(row=1, column=0, sticky="nsew")
         self.page.grid_columnconfigure(0, weight=1)
         self.page.grid_columnconfigure(2, weight=1)
-        self.page.grid_rowconfigure(2, weight=1)
+        self.page.grid_rowconfigure(1, weight=1)
         self.page.bind("<Configure>", self._fit_column)
 
+        # The input card, then one Downloads list (progress and results live in its rows).
         self._build_compose_card(row=0)
-        self._build_status_card(row=1)
-        self._build_queue_card(row=2)
+        self._build_queue_card(row=1)
 
     def _fit_column(self, event=None) -> None:
         scale = customtkinter.ScalingTracker.get_widget_scaling(self)
@@ -751,7 +750,7 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
                                          command=self.on_primary_action)
         self.primary_btn._cur_fg = p.accent_fill
         self.primary_btn.pack(side="left", fill="x", expand=True, padx=(0, SPACING.sm))
-        self.queue_btn = SecondaryButton(actions, p, text="Add to queue", icon="add", width=168,
+        self.queue_btn = SecondaryButton(actions, p, text="Add for later", icon="add", width=168,
                                          height=HEIGHT.button_lg, command=self.add_to_queue)
         self.queue_btn.pack(side="left")
 
@@ -794,24 +793,6 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
             if holder is not None:
                 holder["b"] = b
 
-    def _build_status_card(self, row: int) -> None:
-        p = self.palette
-        card = self._card(row)
-        inner = customtkinter.CTkFrame(card, fg_color="transparent")
-        inner.pack(fill="x", padx=SPACING.xl, pady=(SPACING.lg + 2, SPACING.lg + 2))
-        self.progress_display = ProgressDisplay(inner, p)
-        self.progress_display.set_idle_hint(f"{paths.shortcut('D')} to download  ·  Enter to preview")
-
-        self.result_actions = customtkinter.CTkFrame(inner, fg_color="transparent")
-        self.open_file_btn = GhostButton(self.result_actions, p, text="Play", icon="play",
-                                         text_color=p.text_primary, command=self._open_last_file)
-        self.open_file_btn.pack(side="left", padx=(0, SPACING.xs))
-        GhostButton(self.result_actions, p, text="Show in folder", icon="folder",
-                    text_color=p.text_primary, command=self._reveal_last_file).pack(side="left", padx=(0, SPACING.xs))
-        self.rename_last_btn = GhostButton(self.result_actions, p, text="Rename", icon="rename",
-                                           text_color=p.text_primary, command=self._rename_last_file)
-        self.rename_last_btn.pack(side="left")
-
     def _build_queue_card(self, row: int) -> None:
         p = self.palette
         card = self._card(row, pady=(0, SPACING.xl), sticky="nsew")
@@ -820,17 +801,21 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
 
         header = customtkinter.CTkFrame(card, fg_color="transparent")
         header.grid(row=0, column=0, sticky="ew", padx=SPACING.xl, pady=(SPACING.lg + 2, SPACING.sm))
-        customtkinter.CTkLabel(header, text="Queue", font=TYPE.title, text_color=p.text_primary).pack(side="left")
+        customtkinter.CTkLabel(header, text="Downloads", font=TYPE.title, text_color=p.text_primary).pack(side="left")
         self.queue_count = customtkinter.CTkLabel(header, text="0", font=TYPE.caption_med, height=22,
                                                   text_color=p.text_secondary, fg_color=p.surface_raised,
                                                   corner_radius=RADIUS.sm, padx=8)
         self.queue_count.pack(side="left", padx=(SPACING.sm, 0))
+        self.queue_summary = customtkinter.CTkLabel(header, text="", font=TYPE.caption, height=22,
+                                                    text_color=p.text_secondary)
+        self.queue_summary.pack(side="left", padx=(SPACING.sm, 0))
 
-        self.start_queue_btn = SecondaryButton(header, p, text="Start", icon="play", width=96,
+        # Start all / Pause all: shown only when there's something to start or pause.
+        self.start_queue_btn = SecondaryButton(header, p, text="Start all", icon="play", width=112,
                                                height=HEIGHT.button_sm, command=self.start_queue)
-        self.start_queue_btn.pack(side="right")
-        GhostButton(header, p, text="Clear done", icon="clear", command=self.clear_completed).pack(
-            side="right", padx=(0, SPACING.sm))
+        self._start_btn_shown = False
+        self._clear_btn = GhostButton(header, p, text="Clear finished", icon="clear", command=self.clear_completed)
+        self._clear_btn.pack(side="right", padx=(0, SPACING.sm))
         GhostButton(header, p, text="Paste list", icon="list", command=self._paste_list).pack(
             side="right", padx=(0, SPACING.xs))
 
@@ -892,13 +877,19 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
             except Exception:
                 focused = False
         p = self.palette
-        color = p.error if self._link_message_for is not None else (p.accent if focused else p.border_input)
+        error = self._link_message_for is not None and self._link_message_tone == "error"
+        color = p.error if error else (p.accent if focused else p.border_input)
         self._url_row.configure(border_color=color)
 
-    def _show_link_message(self, text: str) -> None:
-        """Explain a problem with the link under the link box instead of a dialog."""
+    def _show_link_message(self, text: str, tone: str = "error") -> None:
+        """A line under the link box: a problem with the link (instead of a dialog), or a note.
+
+        It goes away as soon as the link box changes.
+        """
         self._link_message_for = self.url_entry.get().strip()
-        self.link_message.configure(text=text)
+        self._link_message_tone = tone
+        self.link_message.configure(text=text, text_color=self.palette.error if tone == "error"
+                                    else self.palette.text_secondary)
         if not self._link_message_shown:
             self._link_message_shown = True
             self.link_message.pack(fill="x", padx=(SPACING.xs, 0), pady=(SPACING.xs + 2, 0), after=self._url_row)
@@ -1115,30 +1106,89 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
     # ===== queue adding ===========================================================
 
     def add_to_queue(self) -> None:
+        """Add for later: into the list without starting (Start all or the row's play button starts it)."""
+        self._add_from_form(start=False)
+
+    def start_download(self) -> None:
+        """Download: into the list, which starts it now (or right after what's downloading)."""
+        self._add_from_form(start=True)
+
+    def on_primary_action(self) -> None:
+        self.start_download()
+
+    def _add_from_form(self, start: bool, confirmed_playlist: bool = False) -> None:
         v = self._validated_inputs()
         if not v:
             return
-        cached = self._cached_info_for(v["url"])
-        item = DownloadItem(
-            url=v["url"], title=cached.get('title') if cached else None,
-            format=self.current_format, quality=self.quality_combo.get(),
-            output_path=v["output_path"], clip_start=v["clip"][0], clip_end=v["clip"][1],
-            custom_name=v["name"],
-        )
-        try:
-            self.queue.add(item)
-        except Exception as e:
-            self.logger.error(f"Error adding to queue: {e}", exc_info=True)
-            ErrorDialog.show(self, "Couldn't add to the queue", str(e))
+        url = v["url"]
+        format_mode, quality = self.current_format, self.quality_combo.get()
+        cached = self._cached_info_for(url)
+
+        if DownloadEngine.is_playlist_url(url) and not confirmed_playlist:
+            count = cached.get("playlist_count") if cached and cached.get("is_playlist") else None
+            what = f"all {count} videos" if count else "every video in it"
+            ConfirmDialog.show(self, "Download the whole playlist?",
+                               f"This link is a playlist. YouDownloader will save {what} into a new folder.",
+                               lambda yes: yes and self._add_from_form(start, confirmed_playlist=True),
+                               confirm_text="Download playlist" if start else "Add playlist")
             return
-        self.refresh_queue_display()
-        if not self.is_downloading:
-            self.progress_display.set_status(f"Added to queue  ·  {item.custom_name or item.title or 'link'}",
-                                             self.palette.text_secondary)
-        self.url_entry.delete(0, "end")
-        self.info_frame.pack_forget()
-        self._clear_per_download_fields()
-        self._update_url_validity()
+
+        def add(chosen_quality: str) -> None:
+            item = DownloadItem(
+                url=url, title=cached.get('title') if cached else None,
+                format=format_mode, quality=chosen_quality, output_path=v["output_path"],
+                clip_start=v["clip"][0], clip_end=v["clip"][1], custom_name=v["name"],
+                status=DownloadStatus.PENDING if start else DownloadStatus.PAUSED,
+            )
+            try:
+                self.queue.add(item)
+            except Exception as e:
+                self.logger.error(f"Error adding to the list: {e}", exc_info=True)
+                ErrorDialog.show(self, "Couldn't add the download", str(e))
+                return
+            # Ready for the next link (unless one was typed in the meantime).
+            if self.url_entry.get().strip() == url:
+                self.url_entry.delete(0, "end")
+                self.info_frame.pack_forget()
+                self._previewed_url = None
+                self._clear_per_download_fields()
+                self._update_url_validity()
+            name = item.custom_name or item.title
+            what = f"“{name}”" if name else "It"
+            if start:
+                waiting = self.queue.is_running()
+                self._start_list()
+                if waiting:
+                    self._show_link_message(f"{what} will download when the one before it finishes.", tone="info")
+            else:
+                self._show_link_message(f"Added for later. {what} starts when you press its play button "
+                                        "or Start.", tone="info")
+            self.refresh_queue_display()
+
+        if not cached:
+            # Not previewed: add right away (the quality is a preference; the
+            # closest one is used). Checking first would mean a slow lookup.
+            add(quality)
+            return
+
+        # Previewed: warn (as before) when the video doesn't come in the chosen quality.
+        def check_quality_thread():
+            try:
+                engine = DownloadEngine(allow_remote_components=self.allow_remote, cookie_file=self.cookie_file)
+                ok, _, available = engine.check_available_quality(url, format_mode, quality, info=cached)
+            except Exception as e:
+                self.logger.error(f"Error checking quality: {e}", exc_info=True)
+                ok, available = True, []
+            self.after(0, lambda: checked(ok, available))
+
+        def checked(ok: bool, available: list) -> None:
+            if ok:
+                add(quality)
+                return
+            QualityWarningDialog.show(self, "Quality not available", quality, available,
+                                      lambda proceed: proceed and add(quality))
+
+        threading.Thread(target=check_quality_thread, daemon=True).start()
 
     def _paste_list(self) -> None:
         output_path = self.location_entry.get().strip()
@@ -1163,220 +1213,31 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
                 self.queue.add(DownloadItem(url=url, format=self.current_format,
                                             quality=self.quality_combo.get(), output_path=output_path))
                 added += 1
+            if added:
+                self._start_list()
             self.refresh_queue_display()
-            msg = f"Queued {added} link{'s' if added != 1 else ''} as " \
+            msg = f"Downloading {added} link{'s' if added != 1 else ''} as " \
                   f"{FormatManager.label(self.current_format)} · {self.quality_combo.get()}."
             if bad:
-                msg += f"\nSkipped {bad} line{'s' if bad != 1 else ''} that aren't YouTube links."
-            InfoDialog.show(self, "Added to queue", msg)
+                msg += f" Skipped {bad} line{'s' if bad != 1 else ''} that aren't YouTube links."
+            self._show_link_message(msg, tone="info")
 
         PasteListDialog.show(self, on_submit)
 
-    # ===== direct download ===========================================================
+    def _start_list(self) -> None:
+        """Start the list if it's idle (the next waiting item downloads)."""
+        if not self.queue.is_running():
+            self._run_before = {id(i) for i in self.queue.get_all()
+                                if i.status in (DownloadStatus.COMPLETED, DownloadStatus.FAILED,
+                                                DownloadStatus.CANCELLED)}
+        if self.queue.start():
+            self._queue_was_running = True
+        self._update_queue_button()
 
-    def start_download(self) -> None:
-        if self.is_downloading:
-            return
-        v = self._validated_inputs()
-        if not v:
-            return
-        url, output_path, clip = v["url"], v["output_path"], v["clip"]
-        format_mode, quality = self.current_format, self.quality_combo.get()
-
-        cached = self._cached_info_for(url)
-        if DownloadEngine.is_playlist_url(url) and not getattr(self, "_playlist_confirmed", False):
-            count = cached.get("playlist_count") if cached and cached.get("is_playlist") else None
-            what = f"all {count} videos" if count else "every video in it"
-
-            def on_choice(yes: bool) -> None:
-                if yes:
-                    self._playlist_confirmed = True
-                    try:
-                        self.start_download()
-                    finally:
-                        self._playlist_confirmed = False
-            ConfirmDialog.show(self, "Download the whole playlist?",
-                               f"This link is a playlist. YouDownloader will save {what} "
-                               "into a new folder.", on_choice, confirm_text="Download playlist")
-            return
-
-        self._download_opts = {
-            "embed_metadata": bool(self.config.get("embed_metadata", True)),
-            "download_subtitles": bool(self.config.get("auto_download_subtitles")),
-            "subtitle_language": self.config.get("subtitle_language") or "en",
-            "clip_start": clip[0],
-            "clip_end": clip[1],
-            "filename": v["name"],
-        }
-        self.result_actions.pack_forget()
-        self._download_token += 1
-        token = self._download_token
-        self.is_downloading = True
-        self.cancelled = False
-        self._set_primary_state("preparing")
-        self.queue_btn.configure(state="disabled")
-        self.progress_display.reset()
-        self.progress_display.start_indeterminate("Preparing…")
-
-        def check_quality_thread():
-            try:
-                engine = DownloadEngine(allow_remote_components=self.allow_remote, cookie_file=self.cookie_file)
-                is_available, _, all_available = engine.check_available_quality(
-                    url, format_mode, quality, info=cached)
-            except Exception as e:
-                self.logger.error(f"Error checking quality: {e}", exc_info=True)
-                is_available, all_available = True, []
-            if is_available:
-                self.after(0, lambda: self._start_download_after_check(token, url, output_path, format_mode, quality))
-            else:
-                self.after(0, lambda: self._show_quality_warning(token, quality, all_available, url,
-                                                                 output_path, format_mode))
-
-        threading.Thread(target=check_quality_thread, daemon=True).start()
-
-    def _is_current(self, token: int) -> bool:
-        return token == self._download_token and self.is_downloading and not self.cancelled
-
-    def _show_quality_warning(self, token, requested_quality, available_resolutions, url, output_path, format_mode):
-        if not self._is_current(token):
-            return
-
-        def on_choice(proceed: bool):
-            if proceed:
-                self._start_download_after_check(token, url, output_path, format_mode, requested_quality)
-            elif self._is_current(token):
-                self.cleanup_download()
-                self.progress_display.reset()
-
-        QualityWarningDialog.show(self, "Quality not available", requested_quality, available_resolutions, on_choice)
-
-    def _start_download_after_check(self, token, url, output_path, format_mode, quality) -> None:
-        if not self._is_current(token):
-            return
-        self._set_primary_state("downloading")
-        engine = DownloadEngine(progress_callback=lambda d: self.progress_callback(d, token),
-                                allow_remote_components=self.allow_remote, cookie_file=self.cookie_file)
-        self.ydl_instance = engine
-        opts = dict(self._download_opts)
-
-        def download_thread():
-            try:
-                ok = engine.download(url=url, output_path=output_path, format_mode=format_mode,
-                                     quality=quality, **opts)
-            except Exception as e:
-                if not engine.cancelled:
-                    self.after(0, lambda msg=str(e): self.on_download_error(msg, token))
-                return
-            if ok:
-                self.last_files = list(engine.downloaded_files)
-                self.after(0, lambda: self.on_download_complete(token))
-            elif not engine.cancelled:
-                self.after(0, lambda: self.on_download_error("The download didn't finish.", token))
-
-        self.download_thread_ref = threading.Thread(target=download_thread, daemon=True)
-        self.download_thread_ref.start()
-
-    def on_primary_action(self) -> None:
-        if self.download_state == "downloading":
-            self.stop_download()
-        elif self.download_state in ("idle", "done"):
-            self.start_download()
-
-    def _crossfade_fg(self, widget, to_hex: str) -> None:
-        frm = getattr(widget, "_cur_fg", to_hex)
-        widget._cur_fg = to_hex
-        if frm != to_hex and self._effects():
-            crossfade(widget, "fg_color", frm, to_hex, duration_ms=MOTION.base)
-        else:
-            widget.configure(fg_color=to_hex)
-
-    def _set_primary_state(self, state: str) -> None:
-        """idle / done: violet Download · preparing: dimmed · downloading: red-outlined Stop."""
-        self.download_state = state
-        p = self.palette
-        btn = self.primary_btn
-        if state == "downloading":
-            btn.configure(text="Stop", state="normal", hover_color="#3A1824", text_color=p.error,
-                          border_width=BORDER.hairline, border_color=p.error)
-            btn.set_icon("stop", p.error)
-            self._crossfade_fg(btn, p.error_subtle)
-        elif state == "preparing":
-            btn.configure(text="Preparing…", state="disabled", hover_color=p.accent_fill_pressed,
-                          border_width=0, text_color=p.on_accent)
-            btn.set_icon(None)
-            self._crossfade_fg(btn, p.accent_fill_pressed)
-        else:
-            btn.configure(text="Download", state="normal", hover_color=p.accent_fill_hover,
-                          border_width=0, text_color=p.on_accent)
-            btn.set_icon("download", p.on_accent)
-            self._crossfade_fg(btn, p.accent_fill)
-            self.queue_btn.configure(state="normal")
-            self.progress_display.stop_indeterminate()
-        self._update_header_busy()
-
-    def _update_header_busy(self) -> None:
-        try:
-            self.header.set_busy(self.is_downloading or self.queue.is_running())
-        except Exception:
-            pass
-
-    def progress_callback(self, d: Dict[str, Any], token: Optional[int] = None) -> None:
-        """Progress from the engine (worker thread)."""
-        if token is not None and token != self._download_token:
-            return
-        if not self.is_downloading or self.cancelled:
-            return
-        status = d.get('status')
-        if status == 'downloading':
-            percent = progress_fraction(d) or 0.0
-            speed = d.get('speed') or 0
-            eta = d.get('eta')
-            info = d.get('info_dict') or {}
-            if info.get('vcodec') == 'none':
-                stage = "Audio stream"
-            elif info.get('acodec') == 'none':
-                stage = "Video stream"
-            else:
-                stage = "Downloading"
-            parts = []
-            if speed:
-                parts.append(f"{speed / 1048576:.1f} MB/s")
-            if eta:
-                e = int(eta)
-                parts.append(f"{e // 60}:{e % 60:02d} left" if e < 3600 else f"{e // 3600}h {e % 3600 // 60}m left")
-            details = "   ·   ".join(parts)
-            self.after(0, lambda: self.progress_display.update_progress(percent, details, speed, stage))
-        elif status == 'finished':
-            self.after(0, lambda: self.progress_display.start_indeterminate("Processing…"))
-        elif status == 'converting':
-            fraction = d.get('progress', 0.0)
-            action = d.get('action', "Converting")
-            self.after(0, lambda: self.progress_display.update_progress(fraction, "", 0, action))
-
-    def _existing_last_files(self):
-        return [f for f in self.last_files if os.path.exists(f)]
-
-    def on_download_complete(self, token: Optional[int] = None) -> None:
-        if token is not None and token != self._download_token:
-            return
-        self.cleanup_download()
-        self.progress_display.complete()
-        files = self._existing_last_files()
-        name = os.path.basename(files[-1]) if len(files) == 1 else f"{len(files)} files"
-        self.progress_display.set_status(f"Saved  ·  {name}" if files else "Download complete",
-                                         self.palette.success, "")
-        if files:
-            single = len(files) == 1
-            self.open_file_btn.configure(text="Play" if single else "Open folder")
-            self.open_file_btn.set_icon("play" if single else "folder", self.palette.text_primary)
-            if single:
-                self.rename_last_btn.pack(side="left")
-            else:
-                self.rename_last_btn.pack_forget()
-            self.result_actions.pack(anchor="w", pady=(SPACING.md, 0))
-        self._clear_per_download_fields()
-        winsys.flash_taskbar(self)
-        self._notify("Download finished", name if files else "Your download is ready.")
+    def stop_current(self) -> None:
+        """Ctrl+S / a row's stop button: stop what's downloading; the list moves on."""
+        if self.queue.cancel_current():
+            self.refresh_queue_display()
 
     def _notify(self, title: str, body: str) -> None:
         """Desktop notification, only when the app is in the background."""
@@ -1390,95 +1251,71 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
         from src.utils import notify
         notify.notify(title, body)
 
-    def _open_last_file(self) -> None:
-        files = self._existing_last_files()
+    def _crossfade_fg(self, widget, to_hex: str) -> None:
+        frm = getattr(widget, "_cur_fg", to_hex)
+        widget._cur_fg = to_hex
+        if frm != to_hex and self._effects():
+            crossfade(widget, "fg_color", frm, to_hex, duration_ms=MOTION.base)
+        else:
+            widget.configure(fg_color=to_hex)
+
+    def _set_primary_state(self, state: str = "idle") -> None:
+        """The Download button is always ready: every click adds to the list."""
+        self.download_state = "idle"
+        p = self.palette
+        btn = self.primary_btn
+        btn.configure(text="Download", state="normal", hover_color=p.accent_fill_hover,
+                      border_width=0, text_color=p.on_accent)
+        btn.set_icon("download", p.on_accent)
+        self._crossfade_fg(btn, p.accent_fill)
+        self.queue_btn.configure(state="normal")
+        self._update_header_busy()
+
+    def _update_header_busy(self) -> None:
         try:
-            if len(files) == 1:
-                winsys.open_path(files[0])
-            elif files:
-                winsys.open_path(os.path.dirname(files[0]))
-        except Exception as e:
-            ErrorDialog.show(self, "Couldn't open it", str(e))
-
-    def _reveal_last_file(self) -> None:
-        files = self._existing_last_files()
-        if files:
-            try:
-                winsys.reveal_file(files[-1])
-            except Exception as e:
-                ErrorDialog.show(self, "Couldn't open the folder", str(e))
-
-    def _rename_last_file(self) -> None:
-        files = self._existing_last_files()
-        if len(files) != 1:
-            return
-        path = files[0]
-
-        def submit(new_name: str) -> Optional[str]:
-            new_path, err = rename_download(path, new_name)
-            if err:
-                return err
-            self.last_files = [new_path]
-            self.progress_display.set_status(f"Saved  ·  {os.path.basename(new_path)}", self.palette.success, "")
-            return None
-
-        stem, ext = os.path.splitext(os.path.basename(path))
-        RenameDialog.show(self, stem, ext, submit)
-
-    def on_download_error(self, error_msg: str, token: Optional[int] = None) -> None:
-        if token is not None and token != self._download_token:
-            return
-        self.cleanup_download()
-        self.progress_display.reset()
-        self.progress_display.set_status("Download failed", self.palette.error)
-        self._notify("Download failed", error_msg.splitlines()[0][:120] if error_msg else "Open YouDownloader for details.")
-        ErrorDialog.show(self, "Download failed", error_msg)
-
-    def stop_download(self) -> None:
-        if not self.is_downloading:
-            return
-        self.cancelled = True
-        if self.ydl_instance:
-            self.ydl_instance.cancel()
-        self.cleanup_download()
-        self.progress_display.reset()
-        self.progress_display.set_status("Cancelled", self.palette.text_secondary)
-
-    def cleanup_download(self) -> None:
-        self.is_downloading = False
-        self.cancelled = False
-        self.ydl_instance = None
-        self.download_thread_ref = None
-        self._set_primary_state("idle")
+            self.header.set_busy(self.queue.is_running())
+        except Exception:
+            pass
 
     # ===== queue ==================================================================
 
     def start_queue(self) -> None:
+        """Header button: Pause all while downloading, otherwise Start all."""
         if self.queue.is_running():
-            self.queue.stop()
+            self.queue.pause()
             self._update_queue_button()
+            self.refresh_queue_display()
             return
-        pending = self.queue.get_pending()
-        if not pending:
-            InfoDialog.show(self, "Nothing to start", "Add links to the queue first.")
+        waiting = self.queue.get_waiting()
+        if not waiting:
             return
-        needs = [i for i in pending if FormatManager.needs_ffmpeg(i.format)]
+        needs = [i for i in waiting if FormatManager.needs_ffmpeg(i.format)]
         if needs and not self._check_ffmpeg_for(needs[0].format):
             return
-        # Items already finished before this run don't count in the "Queue finished" note.
-        self._queue_finished_before = {id(i) for i in self.queue.get_all()
-                                       if i.status in (DownloadStatus.COMPLETED, DownloadStatus.FAILED)}
-        self.queue.start()
+        self._run_before = {id(i) for i in self.queue.get_all()
+                            if i.status in (DownloadStatus.COMPLETED, DownloadStatus.FAILED,
+                                            DownloadStatus.CANCELLED)}
+        if self.queue.start_all():
+            self._queue_was_running = True
         self.refresh_queue_display()
         self._update_queue_button()
 
     def _update_queue_button(self) -> None:
         try:
             running = self.queue.is_running()
-            want = "Stop" if running else "Start"
+            waiting = 0 if running else len(self.queue.get_waiting())
+            want = "Pause all" if running else (f"Start all ({waiting})" if waiting > 1 else "Start")
+            show = running or waiting > 0
+            if show != self._start_btn_shown:
+                self._start_btn_shown = show
+                if show:
+                    self.start_queue_btn.pack(side="right", before=self._clear_btn, padx=(0, 0))
+                    self._clear_btn.pack_configure(padx=(0, SPACING.sm))
+                else:
+                    self.start_queue_btn.pack_forget()
             if self.start_queue_btn.cget("text") != want:
                 self.start_queue_btn.configure(text=want)
-                self.start_queue_btn.set_icon("stop" if running else "play", self.palette.text_primary)
+                self.start_queue_btn.set_icon("pause" if running else "play", self.palette.text_primary)
             self._update_header_busy()
         except Exception:
             pass
@@ -1488,17 +1325,51 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
             if self.queue.clear_completed():
                 self.after_idle(self.refresh_queue_display)
         except Exception as e:
-            self.logger.error(f"Error clearing completed items: {e}", exc_info=True)
-            ErrorDialog.show(self, "Couldn't clear the queue", str(e))
+            self.logger.error(f"Error clearing finished downloads: {e}", exc_info=True)
+            ErrorDialog.show(self, "Couldn't clear the list", str(e))
 
     @staticmethod
     def _item_title(item: DownloadItem) -> str:
         raw = item.custom_name or item.title or item.url
         return raw if len(raw) <= 64 else raw[:63] + "…"
 
-    def _row_signature(self, item: DownloadItem):
+    @staticmethod
+    def display_order(items: List[DownloadItem]) -> List[DownloadItem]:
+        """What's downloading, then what's waiting (in the order it will run), then
+        everything finished, newest first."""
+        active = [i for i in items if i.status == DownloadStatus.DOWNLOADING]
+        waiting = [i for i in items if i.status == DownloadStatus.PENDING]
+        held = [i for i in items if i.status == DownloadStatus.PAUSED]
+        done = [i for i in items if i not in active and i not in waiting and i not in held]
+        done.sort(key=lambda i: i.completed_at or i.created_at, reverse=True)
+        return active + waiting + held + done
+
+    @staticmethod
+    def _size_text(n: Optional[float]) -> str:
+        if not n:
+            return ""
+        for unit in ("B", "KB", "MB", "GB"):
+            if n < 1024 or unit == "GB":
+                return f"{n:.0f} {unit}" if unit in ("B", "KB") or n >= 100 else f"{n:.1f} {unit}"
+            n /= 1024
+        return ""
+
+    @staticmethod
+    def row_stats(item: DownloadItem) -> str:
+        """The live readout on a downloading row: "Video 42% · 8.4 MB/s · 1:12 left"."""
+        stage = item.stage or "Starting"
+        parts = [f"{stage} {int(item.progress * 100)}%" if stage in ("Video", "Audio", "Downloading")
+                 else stage]
+        if item.speed:
+            parts.append(f"{item.speed / 1048576:.1f} MB/s")
+        if item.eta:
+            e = int(item.eta)
+            parts.append(f"{e // 60}:{e % 60:02d} left" if e < 3600 else f"{e // 3600}h {e % 3600 // 60}m left")
+        return "  ·  ".join(parts)
+
+    def _row_signature(self, item: DownloadItem, position: int):
         return (id(item), item.status, self._item_title(item), item.format, item.quality,
-                item.error_message, item.clip_start, item.clip_end)
+                item.error_message, item.clip_start, item.clip_end, item.file_path, position)
 
     def refresh_queue_display(self) -> None:
         """Rebuild rows only when the list or a row's state changed; otherwise
@@ -1506,9 +1377,14 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
         try:
             if not hasattr(self, 'queue_scroll') or not self.queue_scroll.winfo_exists():
                 return
-            items = self.queue.get_all()
+            items = self.display_order(self.queue.get_all())
             self.queue_count.configure(text=str(len(items)))
-            signature = [self._row_signature(i) for i in items]
+            running = self.queue.is_running()
+            waiting = sum(1 for i in items if i.status in (DownloadStatus.PENDING, DownloadStatus.PAUSED))
+            bits = (["1 downloading"] if running else []) + ([f"{waiting} waiting"] if waiting else [])
+            self.queue_summary.configure(text="  ·  ".join(bits))
+            first_pending = next((i for i in items if i.status == DownloadStatus.PENDING), None)
+            signature = [self._row_signature(i, n) for n, i in enumerate(items)] + [running, id(first_pending)]
             if signature == self._queue_signature:
                 for item in items:
                     if item.status == DownloadStatus.DOWNLOADING:
@@ -1520,15 +1396,16 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
             self._queue_rows = {}
             if not items:
                 self._build_empty_queue()
-            for i, item in enumerate(items):
-                self.create_queue_item_widget(i, item)
+            for item in items:
+                self.create_queue_item_widget(item, next_up=(item is first_pending and running))
             self.after_idle(self._sync_queue_scrollbar)
+            self._update_queue_button()
         except Exception as e:
-            self.logger.error(f"Error refreshing queue display: {e}", exc_info=True)
+            self.logger.error(f"Error refreshing the downloads list: {e}", exc_info=True)
 
     def _build_empty_queue(self) -> None:
         p = self.palette
-        # Compact and horizontal: the queue card can be short (it gets what the
+        # Compact and horizontal: the list card can be short (it gets what the
         # form leaves), and a tall empty state was cut off at common sizes.
         box = customtkinter.CTkFrame(self.queue_scroll, fg_color="transparent")
         box.pack(pady=SPACING.lg)
@@ -1537,20 +1414,51 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
             customtkinter.CTkLabel(box, text="", image=img).pack(side="left", padx=(0, SPACING.md))
         text = customtkinter.CTkFrame(box, fg_color="transparent")
         text.pack(side="left")
-        customtkinter.CTkLabel(text, text="Your queue is empty", font=TYPE.body_med, anchor="w",
+        customtkinter.CTkLabel(text, text="Nothing here yet", font=TYPE.body_med, anchor="w",
                                text_color=p.text_primary, height=18).pack(anchor="w")
-        customtkinter.CTkLabel(text, text="Add links with “Add to queue” or “Paste list”, then press Start.",
+        customtkinter.CTkLabel(text, text="Paste a link above or drop one on the window. "
+                                          "Finished downloads stay here with Play and Show in folder.",
                                font=TYPE.caption, text_color=p.text_secondary, anchor="w", height=18
                                ).pack(anchor="w", pady=(SPACING.xxs, 0))
 
-    def create_queue_item_widget(self, index: int, item: DownloadItem) -> None:
+    def _row_status(self, item: DownloadItem, next_up: bool):
+        """(text, color) for a row's second line (not used while downloading)."""
         p = self.palette
+        st = item.status
+        if st == DownloadStatus.FAILED:
+            return self._short_error(Exception(item.error_message or "Download failed")), p.error
+        if st == DownloadStatus.COMPLETED:
+            path = item.file_path
+            if path and not os.path.exists(path):
+                return "Saved, but the file has been moved or deleted", p.text_tertiary
+            folder = os.path.basename(os.path.dirname(path)) if path else os.path.basename(item.output_path or "")
+            if item.file_count > 1:
+                what = f"{item.file_count} files"
+            else:
+                try:
+                    what = self._size_text(os.path.getsize(path)) if path else ""
+                except OSError:
+                    what = ""
+            return "  ·  ".join(x for x in ("Saved", what, folder) if x), p.text_secondary
+        if st == DownloadStatus.CANCELLED:
+            return "Stopped", p.text_secondary
+        if st == DownloadStatus.PAUSED:
+            return "Not started", p.text_secondary
+        if next_up:
+            return "Waiting  ·  starts next", p.text_secondary
+        return ("Waiting" if self.queue.is_running() else "Waiting  ·  paused"), p.text_secondary
+
+    def create_queue_item_widget(self, item: DownloadItem, next_up: bool = False) -> None:
+        p = self.palette
+        st = item.status
+        active = st == DownloadStatus.DOWNLOADING
         row = customtkinter.CTkFrame(self.queue_scroll, fg_color=p.surface_raised, corner_radius=RADIUS.md + 2,
-                                     border_width=0)
+                                     border_width=BORDER.hairline if active else 0,
+                                     border_color=_mix_hex(p.surface_raised, p.accent, 0.35))
         row.pack(fill="x", pady=(0, SPACING.xs + 2), padx=SPACING.xs)
         row.grid_columnconfigure(1, weight=1)
 
-        icon_name, role = _STATUS_ICON.get(item.status, ("clock", "text_secondary"))
+        icon_name, role = _STATUS_ICON.get(st, ("clock", "text_secondary"))
         color = getattr(p, role)
         img = icons.icon(icon_name, 17, color)
         customtkinter.CTkLabel(row, text="" if img else "•", image=img, width=28, text_color=color).grid(
@@ -1560,28 +1468,21 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
                                anchor="w").grid(row=0, column=1, sticky="ew", pady=(SPACING.sm + 2, 0))
 
         widgets: Dict[str, Any] = {"row": row}
-        if item.status == DownloadStatus.DOWNLOADING:
+        if active:
             line = customtkinter.CTkFrame(row, fg_color="transparent")
             line.grid(row=1, column=1, sticky="ew", pady=(SPACING.xs, SPACING.sm + 2))
             line.grid_columnconfigure(0, weight=1)
             bar = customtkinter.CTkProgressBar(line, height=4, corner_radius=RADIUS.pill,
                                                progress_color=p.accent, fg_color=p.surface_hover)
             bar.grid(row=0, column=0, sticky="ew", padx=(0, SPACING.md))
-            stat = customtkinter.CTkLabel(line, text="", font=TYPE.mono, text_color=p.text_secondary, width=150,
-                                          anchor="e")
+            stat = customtkinter.CTkLabel(line, text="", font=TYPE.mono, text_color=p.text_secondary,
+                                          anchor="e", width=240)
             stat.grid(row=0, column=1, sticky="e")
             widgets.update(bar=bar, stat=stat)
         else:
-            if item.status == DownloadStatus.FAILED:
-                text, tcolor = (item.error_message or "Download failed").splitlines()[0][:90], p.error
-            elif item.status == DownloadStatus.COMPLETED:
-                text, tcolor = (os.path.basename(item.file_path) if item.file_path else "Saved"), p.text_secondary
-            elif item.status == DownloadStatus.CANCELLED:
-                text, tcolor = "Cancelled", p.text_secondary
-            else:
-                text, tcolor = "Waiting", p.text_secondary
+            text, tcolor = self._row_status(item, next_up)
             if item.clip_start or item.clip_end:
-                text += "   ·   clip"
+                text += "  ·  clip"
             customtkinter.CTkLabel(row, text=text, font=TYPE.caption, text_color=tcolor, anchor="w").grid(
                 row=1, column=1, sticky="ew", pady=(0, SPACING.sm + 2))
 
@@ -1590,12 +1491,29 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
                                fg_color=p.surface, corner_radius=RADIUS.sm, height=24, padx=10).grid(
             row=0, column=2, rowspan=2, padx=SPACING.sm)
 
-        menu_btn = IconButton(row, p, icon="more", size=32)
-        menu_btn.configure(command=lambda b=menu_btn, idx=index, it=item: self._show_queue_menu(b, idx, it))
-        menu_btn.grid(row=0, column=3, rowspan=2, padx=(0, SPACING.sm))
+        # The action you're most likely to want, right on the row; the rest are under ⋯.
+        actions = customtkinter.CTkFrame(row, fg_color="transparent")
+        actions.grid(row=0, column=3, rowspan=2, padx=(0, SPACING.sm))
+        exists = bool(item.file_path and os.path.exists(item.file_path))
+        if active:
+            IconButton(actions, p, icon="stop", size=32, command=self.stop_current).pack(side="left")
+        elif st in (DownloadStatus.PENDING, DownloadStatus.PAUSED):
+            IconButton(actions, p, icon="play", size=32, color=p.text_primary,
+                       command=lambda it=item: self._start_item(it)).pack(side="left")
+        elif st == DownloadStatus.COMPLETED and exists:
+            IconButton(actions, p, icon="play" if item.file_count <= 1 else "open", size=32, color=p.text_primary,
+                       command=lambda it=item: self._open_item(it)).pack(side="left")
+            IconButton(actions, p, icon="folder", size=32, color=p.text_primary,
+                       command=lambda it=item: self._reveal_item(it)).pack(side="left")
+        elif st in (DownloadStatus.FAILED, DownloadStatus.CANCELLED):
+            GhostButton(actions, p, text="Retry", icon="refresh", text_color=p.text_primary,
+                        command=lambda it=item: self._start_item(it)).pack(side="left")
+        menu_btn = IconButton(actions, p, icon="more", size=32)
+        menu_btn.configure(command=lambda b=menu_btn, it=item: self._show_queue_menu(b, it))
+        menu_btn.pack(side="left")
 
         self._queue_rows[id(item)] = widgets
-        if item.status == DownloadStatus.DOWNLOADING:
+        if active:
             self._update_row_progress(item)
 
     def _update_row_progress(self, item: DownloadItem) -> None:
@@ -1603,23 +1521,53 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
         if not w or "bar" not in w:
             return
         w["bar"].set(max(0.0, min(1.0, item.progress)))
-        stage = item.stage if item.stage and item.stage != "Downloading" else ""
-        spd = f"{item.speed / 1048576:.1f} MB/s" if item.speed else ""
-        w["stat"].configure(text="  ".join(x for x in (stage, f"{int(item.progress * 100)}%", spd) if x))
+        w["stat"].configure(text=self.row_stats(item))
 
-    def _show_queue_menu(self, anchor_widget, index: int, item: DownloadItem) -> None:
+    def _start_item(self, item: DownloadItem) -> None:
+        """A row's play / Retry: download it now, or next if something's downloading."""
+        if FormatManager.needs_ffmpeg(item.format) and not self._check_ffmpeg_for(item.format):
+            return
+        if not self.queue.is_running():
+            self._run_before = {id(i) for i in self.queue.get_all()
+                                if i.status in (DownloadStatus.COMPLETED, DownloadStatus.FAILED,
+                                                DownloadStatus.CANCELLED) and i is not item}
+        if self.queue.start_item(item) and self.queue.is_running():
+            self._queue_was_running = True
+        self.refresh_queue_display()
+
+    def _open_item(self, item: DownloadItem) -> None:
+        try:
+            if item.file_count > 1:
+                winsys.open_path(os.path.dirname(item.file_path))
+            else:
+                winsys.open_path(item.file_path)
+        except Exception as e:
+            ErrorDialog.show(self, "Couldn't open it", str(e))
+
+    def _show_queue_menu(self, anchor_widget, item: DownloadItem) -> None:
         menu = PopupMenu(self, self.palette)
-        if item.status in (DownloadStatus.FAILED, DownloadStatus.CANCELLED):
-            menu.add("Retry", lambda: self._retry_queue_item(index), "refresh")
-        if item.status == DownloadStatus.COMPLETED:
+        st = item.status
+        if st == DownloadStatus.DOWNLOADING:
+            menu.add("Stop", self.stop_current, "stop")
+        if st in (DownloadStatus.PENDING, DownloadStatus.PAUSED):
+            menu.add("Start now" if not self.queue.is_running() else "Download next",
+                     lambda: self._start_item(item), "play")
+        if st in (DownloadStatus.FAILED, DownloadStatus.CANCELLED):
+            menu.add("Retry", lambda: self._start_item(item), "refresh")
+        if st == DownloadStatus.FAILED and item.error_message:
+            menu.add("What went wrong…", lambda: ErrorDialog.show(self, "Download failed", item.error_message),
+                     "info")
+        if st == DownloadStatus.COMPLETED:
             menu.add("Show in folder", lambda: self._reveal_item(item), "folder")
             if item.file_path and os.path.exists(item.file_path):
-                menu.add("Play", lambda: winsys.open_path(item.file_path), "play")
-                menu.add("Rename file…", lambda: self._rename_queue_item(item), "rename")
+                menu.add("Play" if item.file_count <= 1 else "Open folder", lambda: self._open_item(item),
+                         "play" if item.file_count <= 1 else "open")
+                if item.file_count <= 1:
+                    menu.add("Rename file…", lambda: self._rename_queue_item(item), "rename")
         menu.add("Copy link", lambda: (self.clipboard_clear(), self.clipboard_append(item.url)), "link")
-        if item.status != DownloadStatus.DOWNLOADING:
+        if st != DownloadStatus.DOWNLOADING:
             menu.separator()
-            menu.add("Remove", lambda: self.remove_queue_item(index), "delete", danger=True)
+            menu.add("Remove from list", lambda: self.remove_queue_item(item), "delete", danger=True)
         menu.show_below(anchor_widget, align="right")
 
     def _rename_queue_item(self, item: DownloadItem) -> None:
@@ -1638,10 +1586,6 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
         stem, ext = os.path.splitext(os.path.basename(path))
         RenameDialog.show(self, stem, ext, submit)
 
-    def _retry_queue_item(self, index: int) -> None:
-        if self.queue.retry(index):
-            self.refresh_queue_display()
-
     def _reveal_item(self, item: DownloadItem) -> None:
         try:
             if item.file_path and os.path.exists(item.file_path):
@@ -1651,8 +1595,10 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
         except Exception as e:
             self.logger.error(f"Could not open folder: {e}")
 
-    def remove_queue_item(self, index: int) -> None:
-        self.queue.remove(index)
+    def remove_queue_item(self, item: DownloadItem) -> None:
+        index = self.queue.index_of(item)
+        if index >= 0:
+            self.queue.remove(index)
         self.refresh_queue_display()
 
     def on_queue_update(self) -> None:
@@ -1672,14 +1618,12 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
         self.logger.info(f"Link from the browser button: {url or link[:120]}")
         self.bring_to_front()
         if not url or not validate_youtube_url(url)[0]:
-            if not self.is_downloading:
-                self.progress_display.set_status("That page isn't a YouTube video", self.palette.warning)
+            self._show_link_message("That page isn't a YouTube video.")
             return
         self.url_entry.delete(0, "end")
         self.url_entry.insert(0, url)
         self._update_url_validity()
-        if not self.is_downloading:
-            self.fetch_video_info()
+        self.fetch_video_info()
 
     def bring_to_front(self) -> None:
         try:
@@ -1704,17 +1648,33 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
                 self.refresh_queue_display()
             running = self.queue.is_running()
             if self._queue_was_running and not running and not self.queue.get_pending():
-                winsys.flash_taskbar(self)
-                before = getattr(self, "_queue_finished_before", set())
-                items = [i for i in self.queue.get_all() if id(i) not in before]
-                failed = sum(1 for i in items if i.status == DownloadStatus.FAILED)
-                done = sum(1 for i in items if i.status == DownloadStatus.COMPLETED)
-                self._notify("Queue finished", f"{done} downloaded" + (f", {failed} failed" if failed else "") + ".")
+                self._on_list_finished()
             self._queue_was_running = running
             self._update_queue_button()
         except Exception as e:
             self.logger.debug(f"Queue poll error (non-critical): {e}")
         self.after(300, self._poll_queue)
+
+    def _on_list_finished(self) -> None:
+        """Everything that was started has finished: flash the taskbar and notify."""
+        items = [i for i in self.queue.get_all() if id(i) not in self._run_before
+                 and i.status in (DownloadStatus.COMPLETED, DownloadStatus.FAILED)]
+        done = [i for i in items if i.status == DownloadStatus.COMPLETED]
+        failed = [i for i in items if i.status == DownloadStatus.FAILED]
+        if not items:
+            return  # stopped or paused by hand
+        winsys.flash_taskbar(self)
+        if len(items) == 1:
+            item = items[0]
+            if done:
+                self._notify("Download finished", os.path.basename(item.file_path or "") or self._item_title(item))
+            else:
+                self._notify("Download failed", self._short_error(Exception(item.error_message or "")) or
+                             "Open YouDownloader for details.")
+        else:
+            self._notify("Downloads finished", f"{len(done)} downloaded"
+                         + (f", {len(failed)} failed" if failed else "") + ".")
+        self._run_before = {id(i) for i in self.queue.get_all()}
 
     def on_closing(self) -> None:
         try:
@@ -1732,8 +1692,7 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
                 })
         except Exception as e:
             self.logger.debug(f"Could not save window geometry: {e}")
-        if self.is_downloading:
-            self.stop_download()
-        self.queue.stop()
+        # What was downloading goes back to waiting; it restarts with Start next time.
+        self.queue.pause()
         self.logger.info("Closing YouDownloader")
         self.destroy()

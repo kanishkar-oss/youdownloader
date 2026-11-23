@@ -1,5 +1,24 @@
 # Changelog - YouDownloader
 
+## Unreleased — one Downloads list
+
+- **One Downloads list** replaces the status panel and the queue. **Download** adds
+  the link to the list and starts it, or queues it behind what's downloading, so you
+  can keep adding links. **Add for later** adds it without starting.
+- Each row shows its own progress ("Video 42% · 8.4 MB/s · 1:12 left"), then Play
+  and Show in folder when it's saved (with its size and folder), or the reason and
+  Retry when it fails ("What went wrong…" in the ⋯ menu shows the full error).
+- Downloading first, then what's waiting in order, then finished downloads newest
+  first. A row's play button downloads it next. **Pause all** puts the current
+  download back to waiting; **Start** / **Start all** carries on.
+- Rows show the video's title even when the link wasn't previewed.
+- One notification when everything you started has finished ("Download finished" or
+  "Downloads finished: 3 downloaded, 1 failed").
+- Quitting mid-download leaves it waiting for next time instead of "Cancelled".
+- Readable colours (labels, placeholders, input edges, the Download button), errors
+  shown under the link box instead of dialogs, links that preview by themselves, and
+  a slimmer header.
+
 ## Version 5.1.7 — browser button, M4A audio
 
 - **Browser button**: Settings → Downloads → Browser button opens a page with

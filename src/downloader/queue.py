@@ -50,8 +50,10 @@ class DownloadQueue:
         self._engine: Optional[DownloadEngine] = None
         self._download_thread: Optional[threading.Thread] = None
         self._status_callback: Optional[Callable] = None
-        # Set by stop(): finish/cancel the current item and don't start the next.
+        # Set by stop() / pause(): finish/cancel the current item and don't start the next.
         self._stop_requested = False
+        # Set by pause(): the cancelled current item goes back to waiting, not "Cancelled".
+        self._requeue_current = False
         # Bounds concurrent metadata prefetches so a long queue can't fan out an
         # unbounded number of network threads. Daemon threads keep app exit fast.
         self._prefetch_semaphore = threading.Semaphore(2)
@@ -91,6 +93,8 @@ class DownloadQueue:
         with self._lock:
             self._queue.append(item)
         self.logger.info(f"Added to queue: {item.url}")
+        if not item.title:  # so the row shows a title, not the link
+            self._prefetch_metadata(item)
         self._save_async()
         self._notify()
 
@@ -128,6 +132,21 @@ class DownloadQueue:
         with self._lock:
             return [item for item in self._queue if item.status == DownloadStatus.PENDING]
 
+    def get_waiting(self) -> List[DownloadItem]:
+        """Items not started yet: pending (automatic) and held (added without starting)."""
+        with self._lock:
+            return [item for item in self._queue
+                    if item.status in (DownloadStatus.PENDING, DownloadStatus.PAUSED)]
+
+    def index_of(self, item: DownloadItem) -> int:
+        """Position of this exact item (by identity), or -1."""
+        with self._lock:
+            return next((i for i, it in enumerate(self._queue) if it is item), -1)
+
+    @property
+    def current(self) -> Optional[DownloadItem]:
+        return self._current_download
+
     def is_running(self) -> bool:
         return self._current_download is not None
 
@@ -143,6 +162,40 @@ class DownloadQueue:
         if removed:
             self._save_async()
         return removed
+
+    def start_all(self) -> bool:
+        """Release held items too, then start. Returns True if one started."""
+        with self._lock:
+            for item in self._queue:
+                if item.status == DownloadStatus.PAUSED:
+                    item.status = DownloadStatus.PENDING
+        self._save_async()
+        return self.start()
+
+    def start_item(self, item: DownloadItem) -> bool:
+        """Make this item the next to download (now, if nothing is running).
+
+        Works for waiting, held, failed and cancelled items. Returns False if
+        the item isn't in the list or is downloading / done.
+        """
+        with self._lock:
+            idx = next((i for i, it in enumerate(self._queue) if it is item), -1)
+            if idx < 0 or item.status in (DownloadStatus.DOWNLOADING, DownloadStatus.COMPLETED):
+                return False
+            item.status = DownloadStatus.PENDING
+            item.progress = 0.0
+            item.speed = 0.0
+            item.error_message = None
+            # Ahead of every other waiting item (the list keeps its order otherwise).
+            first = next((i for i, it in enumerate(self._queue)
+                          if it.status == DownloadStatus.PENDING and it is not item), None)
+            if first is not None and first < idx:
+                self._queue.pop(idx)
+                self._queue.insert(first, item)
+        self._save_async()
+        self._notify()
+        self.start()
+        return True
 
     def retry(self, index: int) -> bool:
         """Reset a failed/cancelled item back to pending."""
@@ -169,6 +222,21 @@ class DownloadQueue:
         """Cancel the current download and stop processing the queue."""
         self._stop_requested = True
         self.cancel_current()
+
+    def pause(self) -> None:
+        """Stop processing; the current download goes back to waiting (start() restarts it)."""
+        self._stop_requested = True
+        item, engine = self._current_download, self._engine
+        if item is None:
+            return
+        self._requeue_current = True
+        if engine:
+            engine.cancel()
+        self._notify()
+
+    def is_paused(self) -> bool:
+        """Stopped by stop() / pause() with items still waiting."""
+        return self._stop_requested and not self.is_running() and bool(self.get_pending())
 
     def start_next(self) -> bool:
         """
@@ -212,7 +280,10 @@ class DownloadQueue:
                 item.file_size = d.get('total_bytes') or d.get('total_bytes_estimate')
                 item.speed = d.get('speed') or 0.0
                 item.eta = d.get('eta')
-                item.stage = "Downloading"
+                info = d.get('info_dict') or {}
+                # Video and audio arrive as separate streams; say which one this is.
+                item.stage = ("Audio" if info.get('vcodec') == 'none' else
+                              "Video" if info.get('acodec') == 'none' else "Downloading")
             elif status == 'finished':
                 # One stream is done (video and audio arrive separately);
                 # merging/conversion still follows, so this isn't completion.
@@ -247,14 +318,17 @@ class DownloadQueue:
                     item.completed_at = datetime.now()
                     if engine.downloaded_files:
                         item.file_path = engine.downloaded_files[-1]
+                    item.file_count = len(engine.downloaded_files)
+                    if not item.title and item.file_path and item.file_count == 1:
+                        item.title = os.path.splitext(os.path.basename(item.file_path))[0]
                 elif engine.cancelled:
-                    item.status = DownloadStatus.CANCELLED
+                    item.status = self._cancelled_status()
                 else:
                     item.status = DownloadStatus.FAILED
                     item.error_message = "Download failed"
             except Exception as e:
                 if engine.cancelled:
-                    item.status = DownloadStatus.CANCELLED
+                    item.status = self._cancelled_status()
                 else:
                     item.status = DownloadStatus.FAILED
                     item.error_message = str(e)
@@ -262,6 +336,8 @@ class DownloadQueue:
             finally:
                 item.speed = 0.0
                 item.stage = None
+                if item.status == DownloadStatus.PENDING:
+                    item.progress = 0.0
                 with self._lock:
                     if self._current_download is item:
                         self._current_download = None
@@ -277,6 +353,12 @@ class DownloadQueue:
         self._notify()
         return True
 
+    def _cancelled_status(self) -> DownloadStatus:
+        if self._requeue_current:
+            self._requeue_current = False
+            return DownloadStatus.PENDING
+        return DownloadStatus.CANCELLED
+
     def cancel_current(self) -> bool:
         """
         Cancel current download. The worker thread records CANCELLED once the
@@ -288,6 +370,7 @@ class DownloadQueue:
         item, engine = self._current_download, self._engine
         if item is None:
             return False
+        self._requeue_current = False
         if engine:
             engine.cancel()
         item.status = DownloadStatus.CANCELLED

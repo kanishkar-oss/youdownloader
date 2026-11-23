@@ -94,6 +94,30 @@ class TestNotify(unittest.TestCase):
         self.assertEqual(argv[-2:], ["Done", 'He said "hi"'])
 
 
+class TestDownloadsListDisplay(unittest.TestCase):
+    def test_order_is_active_waiting_held_then_newest_finished(self):
+        from datetime import datetime, timedelta
+        from src.app import YouDownloaderApp
+        from src.models.download import DownloadItem, DownloadStatus as S
+        t = datetime(2026, 1, 1)
+        old = DownloadItem(url="old", status=S.COMPLETED, completed_at=t)
+        new = DownloadItem(url="new", status=S.FAILED, created_at=t + timedelta(hours=1))
+        active = DownloadItem(url="active", status=S.DOWNLOADING)
+        w1, w2 = DownloadItem(url="w1"), DownloadItem(url="w2")
+        held = DownloadItem(url="held", status=S.PAUSED)
+        order = YouDownloaderApp.display_order([old, w1, held, active, new, w2])
+        self.assertEqual([i.url for i in order], ["active", "w1", "w2", "held", "new", "old"])
+
+    def test_row_stats(self):
+        from src.app import YouDownloaderApp
+        from src.models.download import DownloadItem
+        item = DownloadItem(url="u", progress=0.42, speed=8.4 * 1048576, eta=72)
+        item.stage = "Video"
+        self.assertEqual(YouDownloaderApp.row_stats(item), "Video 42%  ·  8.4 MB/s  ·  1:12 left")
+        item.stage, item.speed, item.eta = "Merging", 0, None
+        self.assertEqual(YouDownloaderApp.row_stats(item), "Merging")
+
+
 class TestLinkMessages(unittest.TestCase):
     """Wording of the errors shown under the link box."""
 

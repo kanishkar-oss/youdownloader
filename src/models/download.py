@@ -7,12 +7,12 @@ from typing import Optional
 
 class DownloadStatus(Enum):
     """Download status enumeration"""
-    PENDING = "pending"
+    PENDING = "pending"        # waiting its turn: the list starts it automatically
     DOWNLOADING = "downloading"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
-    PAUSED = "paused"
+    PAUSED = "paused"          # added without starting: waits until started by hand
 
 
 @dataclass
@@ -38,6 +38,8 @@ class DownloadItem:
     clip_end: Optional[float] = None
     # User-chosen file name (no extension); None = use the video title.
     custom_name: Optional[str] = None
+    # Files the download produced (a playlist makes many; file_path is the last).
+    file_count: int = 0
     # Transient UI hint ("Downloading", "Processing", "Converting…"); not persisted.
     stage: Optional[str] = field(default=None, compare=False)
     
@@ -62,6 +64,7 @@ class DownloadItem:
             "clip_start": self.clip_start,
             "clip_end": self.clip_end,
             "custom_name": self.custom_name,
+            "file_count": self.file_count,
         }
     
     @classmethod
@@ -84,6 +87,7 @@ class DownloadItem:
             clip_start=data.get("clip_start"),
             clip_end=data.get("clip_end"),
             custom_name=data.get("custom_name"),
+            file_count=data.get("file_count") or (1 if data.get("file_path") else 0),
         )
         if "created_at" in data and data["created_at"]:
             item.created_at = datetime.fromisoformat(data["created_at"])
