@@ -94,5 +94,26 @@ class TestNotify(unittest.TestCase):
         self.assertEqual(argv[-2:], ["Done", 'He said "hi"'])
 
 
+class TestLinkMessages(unittest.TestCase):
+    """Wording of the errors shown under the link box."""
+
+    def test_short_error_drops_ytdlp_prefixes_and_extra_lines(self):
+        from src.app import YouDownloaderApp
+        err = Exception("ERROR: [youtube] aaaaaaaaaaa: This video is unavailable\nmore detail")
+        self.assertEqual(YouDownloaderApp._short_error(err), "This video is unavailable")
+
+    def test_short_error_caps_length(self):
+        from src.app import YouDownloaderApp
+        text = YouDownloaderApp._short_error(Exception("x" * 500))
+        self.assertEqual(len(text), 201)
+        self.assertTrue(text.endswith("…"))
+
+    def test_sentence_adds_a_full_stop_once(self):
+        from src.app import YouDownloaderApp
+        self.assertEqual(YouDownloaderApp._sentence("Invalid YouTube URL format"), "Invalid YouTube URL format.")
+        self.assertEqual(YouDownloaderApp._sentence("Already done."), "Already done.")
+        self.assertEqual(YouDownloaderApp._sentence(None), "Check the link and try again.")
+
+
 if __name__ == "__main__":
     unittest.main()

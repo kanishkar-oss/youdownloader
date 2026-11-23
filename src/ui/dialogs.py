@@ -192,7 +192,7 @@ class QualityWarningDialog:
                  + (f"The closest is {best}." if best else "We'll use the best it has."))
         if available_resolutions:
             customtkinter.CTkLabel(d.body, text=tracked("Available"), font=TYPE.overline,
-                                   text_color=P.text_disabled).pack(anchor="w", pady=(SPACING.lg, SPACING.xs))
+                                   text_color=P.text_tertiary).pack(anchor="w", pady=(SPACING.lg, SPACING.xs))
             chips = customtkinter.CTkFrame(d.body, fg_color="transparent")
             chips.pack(anchor="w")
             for res in available_resolutions[:8]:
@@ -234,7 +234,7 @@ class RenameDialog:
         entry.pack(side="left", fill="x", expand=True)
         entry.insert(0, current_stem)
         if extension:
-            customtkinter.CTkLabel(row, text=extension, font=TYPE.mono, text_color=P.text_disabled,
+            customtkinter.CTkLabel(row, text=extension, font=TYPE.mono, text_color=P.text_tertiary,
                                    fg_color=P.surface_raised, corner_radius=RADIUS.sm, height=HEIGHT.entry,
                                    padx=10).pack(side="left", padx=(SPACING.sm, 0))
         err = d.text("", color=P.error, font=TYPE.caption)
@@ -264,7 +264,7 @@ class PasteListDialog:
                  "quality and folder.")
         box = customtkinter.CTkTextbox(d.body, height=170, width=d.width, font=TYPE.body,
                                        fg_color=P.surface_raised, text_color=P.text_primary,
-                                       border_width=1, border_color=P.border_strong,
+                                       border_width=1, border_color=P.border_input,
                                        corner_radius=RADIUS.md, wrap="none")
         box.pack(fill="x", pady=(SPACING.lg, SPACING.xs))
         count = d.text("", font=TYPE.caption)
@@ -310,7 +310,7 @@ class UpdateDialog:
                  f"You have {__version__}. " + (blocker or "Download it from the release page."))
         if release.notes:
             customtkinter.CTkLabel(d.body, text=tracked("What's new"), font=TYPE.overline,
-                                   text_color=P.text_disabled).pack(anchor="w", pady=(SPACING.lg, SPACING.xs))
+                                   text_color=P.text_tertiary).pack(anchor="w", pady=(SPACING.lg, SPACING.xs))
             notes = customtkinter.CTkTextbox(d.body, height=130, width=d.width, font=TYPE.body,
                                              fg_color=P.surface_raised, text_color=P.text_secondary,
                                              border_width=1, border_color=P.border_subtle,
@@ -442,7 +442,7 @@ class SettingsDialog:
 
         def card(title: str):
             customtkinter.CTkLabel(scroll, text=tracked(title), font=TYPE.overline,
-                                   text_color=P.text_disabled).pack(anchor="w", padx=SPACING.md + 2,
+                                   text_color=P.text_tertiary).pack(anchor="w", padx=SPACING.md + 2,
                                                                     pady=(SPACING.sm, SPACING.xs))
             frame = customtkinter.CTkFrame(scroll, fg_color=P.surface_raised, corner_radius=RADIUS.lg,
                                            border_width=BORDER.hairline, border_color=P.border_subtle)
@@ -471,7 +471,7 @@ class SettingsDialog:
         def switch(parent_frame, key: str, default: bool, on_change=None):
             sw = customtkinter.CTkSwitch(parent_frame, text="", width=46, switch_width=40, switch_height=22,
                                          progress_color=P.accent, button_color="#FFFFFF",
-                                         button_hover_color="#E9E7FF", fg_color=P.border_strong)
+                                         button_hover_color="#E9E7FF", fg_color=P.border_input)
             sw.select() if parent.config.get(key, default) else sw.deselect()
 
             def changed():

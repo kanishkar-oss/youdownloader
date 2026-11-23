@@ -1,8 +1,8 @@
 """SpaceHeader — the app's hero band.
 
 A full-width canvas: a procedurally generated deep-space backdrop (faint violet
-and cyan nebula, a dusting of stars) rendered with PIL, with the wordmark,
-tagline, a sign-in status chip and the Settings button drawn on top. Two tiny
+and cyan nebula, a dusting of stars) rendered with PIL, with the wordmark, a
+sign-in status chip and the Settings button drawn on top. Two tiny
 animations, both off when visual effects are disabled: a handful of stars
 twinkle, and a satellite drifts along a hairline orbit (faster while a
 download is running).
@@ -180,7 +180,7 @@ class SpaceHeader(tkinter.Canvas):
 
         # Orbit: a hairline ellipse sweeping behind the right side.
         ox, oy = right - self._px(120), H * 0.52
-        self._orbit_geom = (ox, oy, self._px(260), self._px(46))
+        self._orbit_geom = (ox, oy, self._px(260), self._px(34))
         rx, ry = self._orbit_geom[2], self._orbit_geom[3]
         self.create_oval(ox - rx, oy - ry, ox + rx, oy + ry, outline=_mix(p.bg, p.accent, 0.28),
                          width=1, tags=("overlay", "orbit"))
@@ -190,13 +190,11 @@ class SpaceHeader(tkinter.Canvas):
                                           width=1, tags=("overlay", "sat"))
         self._place_satellite()
 
-        # Wordmark + tagline, aligned with the content column.
-        ty = H * 0.42
+        # Wordmark, aligned with the content column. (No tagline: the format
+        # picker right below already lists the formats, and the band is slimmer.)
+        ty = H * 0.46
         self.create_text(left, ty, text="YouDownloader", anchor="w", fill=p.text_primary,
                          font=self._font(TYPE.display), tags=("overlay",))
-        self.create_text(left + self._px(1), ty + self._px(30), anchor="w", fill=p.text_secondary,
-                         text="Video and audio from YouTube  ·  MP4  ·  MOV  ·  MP3  ·  M4A  ·  WAV",
-                         font=self._font(TYPE.caption), tags=("overlay",))
 
         # Settings button (icon font glyph) at the right edge of the column.
         gx, gy = right - self._px(14), ty

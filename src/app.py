@@ -11,6 +11,7 @@ maximized windows stay calm instead of stretching edge to edge.
 """
 import io
 import os
+import re
 import shutil
 import sys
 import threading
@@ -110,7 +111,7 @@ _STATUS_ICON = {
     DownloadStatus.DOWNLOADING: ("download", "accent_hover"),
     DownloadStatus.COMPLETED: ("check", "success"),
     DownloadStatus.FAILED: ("error", "error"),
-    DownloadStatus.CANCELLED: ("close", "text_disabled"),
+    DownloadStatus.CANCELLED: ("close", "text_tertiary"),
     DownloadStatus.PAUSED: ("clock", "text_secondary"),
 }
 
@@ -214,6 +215,10 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
         self._queue_signature = None
         self.last_files: list = []
         self._last_autofill: Optional[str] = None
+        self._link_message_for: Optional[str] = None  # the link the message under the link box is about
+        self._link_message_shown = False
+        self._auto_preview_job = None
+        self._previewed_url: Optional[str] = None
         self.download_state = "idle"
         self.ydl_instance: Optional[DownloadEngine] = None
         self.download_thread_ref: Optional[threading.Thread] = None
@@ -559,7 +564,7 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
 
     def _on_drop_leave(self, event):
         try:
-            self._url_row.configure(border_color=self.palette.border_strong)
+            self._paint_url_border()
         except Exception:
             pass
         return event.action
@@ -627,7 +632,7 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
 
     def _overline(self, parent, text: str) -> customtkinter.CTkLabel:
         return customtkinter.CTkLabel(parent, text=tracked(text), font=TYPE.overline,
-                                      text_color=self.palette.text_disabled, anchor="w", height=16)
+                                      text_color=self.palette.text_tertiary, anchor="w", height=16)
 
     def _field(self, parent, label: str) -> customtkinter.CTkFrame:
         box = customtkinter.CTkFrame(parent, fg_color="transparent")
@@ -644,31 +649,34 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
 
         # --- Link bar: icon · entry · validity · Paste · Preview ---
         bar = customtkinter.CTkFrame(inner, fg_color=p.surface_raised, corner_radius=RADIUS.md + 2,
-                                     border_width=BORDER.hairline, border_color=p.border_strong,
+                                     border_width=BORDER.hairline, border_color=p.border_input,
                                      height=HEIGHT.url_bar)
         bar.pack(fill="x")
         bar.pack_propagate(False)
         self._url_row = bar
-        link_icon = icons.icon("link", 18, p.text_disabled)
+        link_icon = icons.icon("link", 18, p.text_tertiary)
         customtkinter.CTkLabel(bar, text="" if link_icon else "↗", image=link_icon, width=24).pack(
             side="left", padx=(SPACING.md + 2, SPACING.xs))
         self.url_entry = FieldEntry(bar, p, border_width=0, fg_color=p.surface_raised, font=TYPE.body_lg,
                                     placeholder_text=("Paste or drop a YouTube link" if TkinterDnD else "Paste a YouTube link"),
                                     height=HEIGHT.url_bar - 12)
         self.url_entry.pack(side="left", fill="x", expand=True)
-        self.url_entry.bind("<FocusIn>", lambda e: bar.configure(border_color=p.accent), add="+")
-        self.url_entry.bind("<FocusOut>", lambda e: bar.configure(border_color=p.border_strong), add="+")
-        self.url_entry.bind("<KeyRelease>", lambda e: self._update_url_validity())
+        self.url_entry.bind("<FocusIn>", lambda e: self._paint_url_border(focused=True), add="+")
+        self.url_entry.bind("<FocusOut>", lambda e: self._paint_url_border(focused=False), add="+")
+        self.url_entry.bind("<KeyRelease>", lambda e: self._on_link_edited())
         self.url_entry.bind("<Return>", lambda e: self.fetch_video_info())
 
         self.url_validity_pip = StatusPip(bar, color=p.text_disabled, size=7, bg=p.surface_raised)
         self.url_validity_pip.hide()
         self.url_validity_pip.pack(side="left", padx=(SPACING.xs, SPACING.sm))
-        self.preview_btn = SecondaryButton(bar, p, text="Preview", height=HEIGHT.button_sm, width=86,
-                                           fg_color=p.surface_hover, border_width=0,
-                                           command=self.fetch_video_info)
-        self.preview_btn.pack(side="right", padx=(SPACING.xs, SPACING.sm))
-        GhostButton(bar, p, text="Paste", icon="paste", width=78, command=self._paste_link).pack(side="right")
+        # No Preview button: a valid link previews by itself (Enter / F5 still do it).
+        SecondaryButton(bar, p, text="Paste", icon="paste", height=HEIGHT.button_sm, width=86,
+                        fg_color=p.surface_hover, border_width=0, command=self._paste_link
+                        ).pack(side="right", padx=(SPACING.xs, SPACING.sm))
+
+        # Problems with the link are explained here, not in a dialog.
+        self.link_message = customtkinter.CTkLabel(inner, text="", font=TYPE.caption, text_color=p.error,
+                                                   anchor="w", justify="left", wraplength=780, height=18)
 
         # --- Preview (hidden until fetched) ---
         self.info_frame = customtkinter.CTkFrame(inner, fg_color=p.surface_raised, corner_radius=RADIUS.md + 2)
@@ -696,7 +704,7 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
             f, values=FormatManager.labels(),
             command=lambda label: self.on_format_change(FormatManager.mode_from_label(label)),
             height=HEIGHT.entry, corner_radius=RADIUS.md, font=TYPE.button, border_width=3,
-            fg_color=p.surface_raised, selected_color=p.accent, selected_hover_color=p.accent_hover,
+            fg_color=p.surface_raised, selected_color=p.accent_fill, selected_hover_color=p.accent_fill_hover,
             unselected_color=p.surface_raised, unselected_hover_color=p.surface_hover,
             text_color=p.text_primary, text_color_disabled=p.text_disabled,
         )
@@ -722,7 +730,7 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
         clip_row.grid_columnconfigure((0, 2), weight=1)
         self.clip_start_entry = FieldEntry(clip_row, p, placeholder_text="Start  0:00", justify="center")
         self.clip_start_entry.grid(row=0, column=0, sticky="ew")
-        customtkinter.CTkLabel(clip_row, text="→", font=TYPE.body, text_color=p.text_disabled, width=24
+        customtkinter.CTkLabel(clip_row, text="→", font=TYPE.body, text_color=p.text_tertiary, width=24
                                ).grid(row=0, column=1)
         self.clip_end_entry = FieldEntry(clip_row, p, placeholder_text="End", justify="center")
         self.clip_end_entry.grid(row=0, column=2, sticky="ew")
@@ -741,7 +749,7 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
         actions.pack(fill="x", pady=(SPACING.xl, 0))
         self.primary_btn = PrimaryButton(actions, p, text="Download", icon="download",
                                          command=self.on_primary_action)
-        self.primary_btn._cur_fg = p.accent
+        self.primary_btn._cur_fg = p.accent_fill
         self.primary_btn.pack(side="left", fill="x", expand=True, padx=(0, SPACING.sm))
         self.queue_btn = SecondaryButton(actions, p, text="Add to queue", icon="add", width=168,
                                          height=HEIGHT.button_lg, command=self.add_to_queue)
@@ -792,7 +800,7 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
         inner = customtkinter.CTkFrame(card, fg_color="transparent")
         inner.pack(fill="x", padx=SPACING.xl, pady=(SPACING.lg + 2, SPACING.lg + 2))
         self.progress_display = ProgressDisplay(inner, p)
-        self.progress_display.set_idle_hint(f"{paths.shortcut('D')} download  ·  F5 preview")
+        self.progress_display.set_idle_hint(f"{paths.shortcut('D')} to download  ·  Enter to preview")
 
         self.result_actions = customtkinter.CTkFrame(inner, fg_color="transparent")
         self.open_file_btn = GhostButton(self.result_actions, p, text="Play", icon="play",
@@ -830,6 +838,29 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
             card, fg_color="transparent", scrollbar_button_color=p.border_strong,
             scrollbar_button_hover_color=p.text_disabled)
         self.queue_scroll.grid(row=1, column=0, sticky="nsew", padx=SPACING.md, pady=(0, SPACING.md))
+        # Rows changing size, and the card itself growing or shrinking (e.g. when a preview opens).
+        self.queue_scroll.bind("<Configure>", lambda e: self.after_idle(self._sync_queue_scrollbar), add="+")
+        try:
+            self.queue_scroll._parent_canvas.bind("<Configure>", lambda e: self.after_idle(self._sync_queue_scrollbar),
+                                                  add="+")
+        except Exception:
+            pass
+
+    def _sync_queue_scrollbar(self) -> None:
+        """Show the queue's scrollbar only when the rows don't fit (CTk always shows it)."""
+        try:
+            scroll = self.queue_scroll
+            canvas, bar = scroll._parent_canvas, scroll._scrollbar
+            canvas.update_idletasks()
+            bbox = canvas.bbox("all")
+            fits = bbox is None or (bbox[3] - bbox[1]) <= canvas.winfo_height() + 1
+            if fits:
+                canvas.yview_moveto(0)
+                bar.grid_remove()
+            else:
+                bar.grid()
+        except Exception:
+            pass  # Private CTk internals; a visible scrollbar is the harmless fallback.
 
     def _run_deno_install(self) -> None:
         bat = os.path.join(paths.PROJECT_ROOT, "install_deno.bat")
@@ -846,25 +877,102 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
 
     def _update_url_validity(self) -> None:
         url = self.url_entry.get().strip()
+        if url != self._link_message_for:
+            self._clear_link_message()
         if not url:
             self.url_validity_pip.hide()
             return
         is_valid, _ = validate_youtube_url(url)
         self.url_validity_pip.set_color(self.palette.success if is_valid else self.palette.error)
 
+    def _paint_url_border(self, focused: Optional[bool] = None) -> None:
+        if focused is None:
+            try:
+                focused = self.focus_get() is self.url_entry._entry
+            except Exception:
+                focused = False
+        p = self.palette
+        color = p.error if self._link_message_for is not None else (p.accent if focused else p.border_input)
+        self._url_row.configure(border_color=color)
+
+    def _show_link_message(self, text: str) -> None:
+        """Explain a problem with the link under the link box instead of a dialog."""
+        self._link_message_for = self.url_entry.get().strip()
+        self.link_message.configure(text=text)
+        if not self._link_message_shown:
+            self._link_message_shown = True
+            self.link_message.pack(fill="x", padx=(SPACING.xs, 0), pady=(SPACING.xs + 2, 0), after=self._url_row)
+        self._paint_url_border()
+
+    def _clear_link_message(self) -> None:
+        if self._link_message_for is None:
+            return
+        self._link_message_for = None
+        if self._link_message_shown:
+            self._link_message_shown = False
+            self.link_message.pack_forget()
+        self._paint_url_border()
+
+    @staticmethod
+    def _sentence(text: Optional[str]) -> str:
+        text = (text or "Check the link and try again").strip()
+        return text if text.endswith((".", "!", "?")) else text + "."
+
+    @staticmethod
+    def _short_error(error: Exception) -> str:
+        """First line of a yt-dlp error, without its "ERROR: [youtube] id:" prefix."""
+        text = (str(error).strip().splitlines() or [""])[0]
+        text = re.sub(r"^ERROR:\s*", "", text)
+        text = re.sub(r"^\[[^\]]+\]\s*[\w-]+:\s*", "", text)
+        return text[:200] + ("…" if len(text) > 200 else "")
+
+    def _on_link_edited(self) -> None:
+        """Typing or pasting into the link box: preview a valid link after a short pause."""
+        self._update_url_validity()
+        if self._auto_preview_job:
+            self.after_cancel(self._auto_preview_job)
+            self._auto_preview_job = None
+        url = self.url_entry.get().strip()
+        if url and url != self._previewed_url and validate_youtube_url(url)[0]:
+            self._auto_preview_job = self.after(600, self._auto_preview)
+
+    def _auto_preview(self) -> None:
+        self._auto_preview_job = None
+        url = self.url_entry.get().strip()
+        if not url or url == self._previewed_url or not validate_youtube_url(url)[0]:
+            return
+        if self.info_fetch_thread and self.info_fetch_thread.is_alive():
+            self._auto_preview_job = self.after(400, self._auto_preview)  # try again once it finishes
+            return
+        self.fetch_video_info()
+
     def fetch_video_info(self) -> None:
+        if self._auto_preview_job:
+            self.after_cancel(self._auto_preview_job)
+            self._auto_preview_job = None
         url = self.url_entry.get().strip()
         if not url:
-            ErrorDialog.show(self, "No link yet", "Paste a YouTube link first.")
+            self._show_link_message("Paste a YouTube link first.")
+            self.url_entry.focus_set()
             return
         is_valid, error_msg = validate_youtube_url(url)
         if not is_valid:
-            ErrorDialog.show(self, "That isn't a YouTube link", error_msg or "Check the link and try again.")
+            self._show_link_message(f"That isn't a YouTube link. {self._sentence(error_msg)}")
             return
         if self.info_fetch_thread and self.info_fetch_thread.is_alive():
             return
+        self._previewed_url = url
+        self._clear_link_message()
 
-        self.preview_btn.configure(state="disabled", text="Loading…")
+        def still_current() -> bool:
+            return self.url_entry.get().strip() == url
+
+        def failed(message: str) -> None:
+            if still_current():
+                self.info_frame.pack_forget()
+                self.name_entry.configure(placeholder_text="Same as the video title")
+                self.url_validity_pip.set_color(self.palette.error)
+                self._show_link_message(message)
 
         def fetch_thread():
             try:
@@ -872,16 +980,14 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
                 info = engine.get_video_info(url)
                 if info:
                     self.cached_video_info = info
-                    self.after(0, lambda: self.display_video_info(info))
+                    self.after(0, lambda: still_current() and self.display_video_info(info))
                 else:
-                    self.after(0, lambda: (self.info_frame.pack_forget(), ErrorDialog.show(
-                        self, "Couldn't load that video", "It may be private, removed, or region-locked.")))
+                    self.after(0, lambda: failed("Couldn't load that video. It may be private, removed, "
+                                                 "or not available in your country."))
             except Exception as e:
                 self.logger.error(f"Error fetching video info: {e}", exc_info=True)
-                self.after(0, lambda: (self.info_frame.pack_forget(),
-                                       ErrorDialog.show(self, "Couldn't load that video", str(e))))
-            finally:
-                self.after(0, lambda: self.preview_btn.configure(state="normal", text="Preview"))
+                message = f"Couldn't load that video: {self._short_error(e)}"
+                self.after(0, lambda: failed(message))
 
         self.info_fetch_thread = threading.Thread(target=fetch_thread, daemon=True)
         self.info_fetch_thread.start()
@@ -953,11 +1059,12 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
         """Common validation for Download / Add to queue. Returns a dict or None."""
         url = self.url_entry.get().strip()
         if not url:
-            ErrorDialog.show(self, "No link yet", "Paste a YouTube link first.")
+            self._show_link_message("Paste a YouTube link first.")
+            self.url_entry.focus_set()
             return None
         ok, err = validate_youtube_url(url)
         if not ok:
-            ErrorDialog.show(self, "That isn't a YouTube link", err or "Check the link and try again.")
+            self._show_link_message(f"That isn't a YouTube link. {self._sentence(err)}")
             return None
         output_path = self.location_entry.get().strip()
         ok, err = validate_path(output_path)
@@ -1194,15 +1301,15 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
             btn.set_icon("stop", p.error)
             self._crossfade_fg(btn, p.error_subtle)
         elif state == "preparing":
-            btn.configure(text="Preparing…", state="disabled", hover_color=p.accent_pressed,
+            btn.configure(text="Preparing…", state="disabled", hover_color=p.accent_fill_pressed,
                           border_width=0, text_color=p.on_accent)
             btn.set_icon(None)
-            self._crossfade_fg(btn, p.accent_pressed)
+            self._crossfade_fg(btn, p.accent_fill_pressed)
         else:
-            btn.configure(text="Download", state="normal", hover_color=p.accent_hover,
+            btn.configure(text="Download", state="normal", hover_color=p.accent_fill_hover,
                           border_width=0, text_color=p.on_accent)
             btn.set_icon("download", p.on_accent)
-            self._crossfade_fg(btn, p.accent)
+            self._crossfade_fg(btn, p.accent_fill)
             self.queue_btn.configure(state="normal")
             self.progress_display.stop_indeterminate()
         self._update_header_busy()
@@ -1413,23 +1520,28 @@ class YouDownloaderApp(customtkinter.CTk, _DnDMixin):
             self._queue_rows = {}
             if not items:
                 self._build_empty_queue()
-                return
             for i, item in enumerate(items):
                 self.create_queue_item_widget(i, item)
+            self.after_idle(self._sync_queue_scrollbar)
         except Exception as e:
             self.logger.error(f"Error refreshing queue display: {e}", exc_info=True)
 
     def _build_empty_queue(self) -> None:
         p = self.palette
+        # Compact and horizontal: the queue card can be short (it gets what the
+        # form leaves), and a tall empty state was cut off at common sizes.
         box = customtkinter.CTkFrame(self.queue_scroll, fg_color="transparent")
-        box.pack(fill="x", pady=(SPACING.xxl, SPACING.xl))
-        img = icons.badge("download", 44, p.text_secondary, p.surface_raised)
+        box.pack(pady=SPACING.lg)
+        img = icons.badge("download", 36, p.text_secondary, p.surface_raised)
         if img:
-            customtkinter.CTkLabel(box, text="", image=img).pack()
-        customtkinter.CTkLabel(box, text="Your queue is empty", font=TYPE.body_med,
-                               text_color=p.text_primary).pack(pady=(SPACING.md, SPACING.xxs))
-        customtkinter.CTkLabel(box, text="Add links with “Add to queue” or “Paste list”, then press Start.",
-                               font=TYPE.caption, text_color=p.text_secondary).pack()
+            customtkinter.CTkLabel(box, text="", image=img).pack(side="left", padx=(0, SPACING.md))
+        text = customtkinter.CTkFrame(box, fg_color="transparent")
+        text.pack(side="left")
+        customtkinter.CTkLabel(text, text="Your queue is empty", font=TYPE.body_med, anchor="w",
+                               text_color=p.text_primary, height=18).pack(anchor="w")
+        customtkinter.CTkLabel(text, text="Add links with “Add to queue” or “Paste list”, then press Start.",
+                               font=TYPE.caption, text_color=p.text_secondary, anchor="w", height=18
+                               ).pack(anchor="w", pady=(SPACING.xxs, 0))
 
     def create_queue_item_widget(self, index: int, item: DownloadItem) -> None:
         p = self.palette

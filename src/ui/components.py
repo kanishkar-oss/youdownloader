@@ -113,7 +113,12 @@ class ProgressDisplay:
     def set_idle_hint(self, hint: str) -> None:
         self._idle_hint = hint
         if not self._indeterminate and self.target_progress == 0:
-            self.stats_label.configure(text=hint)
+            self._show_hint()
+
+    def _show_hint(self) -> None:
+        # The idle shortcut hint is quiet body text; the mono face is for live stats.
+        self.stats_label.configure(text=self._idle_hint, font=TYPE.caption,
+                                   text_color=self.palette.text_tertiary)
 
     def _on_destroy(self, _event=None) -> None:
         if self.animation_id:
@@ -143,7 +148,7 @@ class ProgressDisplay:
 
     def set_status(self, text: str, color: str = None, stats: str = "") -> None:
         self.details_label.configure(text=text, text_color=color or self.palette.text_primary)
-        self.stats_label.configure(text=stats)
+        self.stats_label.configure(text=stats, font=TYPE.mono, text_color=self.palette.text_secondary)
 
     def start_indeterminate(self, text: str = "Preparing…") -> None:
         self.set_status(text, self.palette.text_primary, "")
@@ -189,7 +194,8 @@ class ProgressDisplay:
         self.current_progress = 0.0
         self.target_progress = 0.0
         self._set_bar(0)
-        self.set_status("Ready", self.palette.text_primary, self._idle_hint)
+        self.set_status("Ready", self.palette.text_primary)
+        self._show_hint()
         if self.animation_id:
             self.parent.after_cancel(self.animation_id)
             self.animation_id = None

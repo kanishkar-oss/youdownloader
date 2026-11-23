@@ -41,7 +41,7 @@ class PrimaryButton(_IconTextButton):
     def __init__(self, parent, palette: Palette, icon=None, **kwargs):
         opts = dict(
             height=HEIGHT.button_lg, corner_radius=RADIUS.md, font=TYPE.button_lg,
-            fg_color=palette.accent, hover_color=palette.accent_hover,
+            fg_color=palette.accent_fill, hover_color=palette.accent_fill_hover,
             text_color=palette.on_accent, text_color_disabled="#C9C3FF",
             border_width=0,
         )
@@ -55,7 +55,7 @@ class SecondaryButton(_IconTextButton):
         opts = dict(
             height=HEIGHT.button_md, corner_radius=RADIUS.md, font=TYPE.button,
             fg_color=palette.surface_raised, border_width=BORDER.hairline,
-            border_color=palette.border_strong, text_color=palette.text_primary,
+            border_color=palette.border_input, text_color=palette.text_primary,
             text_color_disabled=palette.text_disabled, hover_color=palette.surface_hover,
         )
         opts.update(kwargs)

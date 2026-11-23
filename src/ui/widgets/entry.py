@@ -19,8 +19,8 @@ class FieldEntry(customtkinter.CTkEntry):
     def __init__(self, parent, palette: Palette, **kwargs):
         opts = dict(
             height=HEIGHT.entry, corner_radius=RADIUS.md, border_width=BORDER.hairline,
-            border_color=palette.border_strong, fg_color=palette.surface_raised,
-            text_color=palette.text_primary, placeholder_text_color=palette.text_disabled,
+            border_color=palette.border_input, fg_color=palette.surface_raised,
+            text_color=palette.text_primary, placeholder_text_color=palette.text_tertiary,
             font=TYPE.body,
         )
         opts.update(kwargs)
@@ -63,7 +63,7 @@ class SelectButton(customtkinter.CTkButton):
         opts = dict(
             text=self._value, anchor="w", height=HEIGHT.entry, corner_radius=RADIUS.md,
             font=TYPE.body, fg_color=palette.surface_raised, hover_color=palette.surface_raised,
-            border_width=BORDER.hairline, border_color=palette.border_strong,
+            border_width=BORDER.hairline, border_color=palette.border_input,
             text_color=palette.text_primary, command=self._open,
         )
         opts.update(kwargs)
@@ -76,8 +76,8 @@ class SelectButton(customtkinter.CTkButton):
         self._chevron.bind("<Button-1>", lambda e: self._open())
         base = super(SelectButton, self)
         for w in (self, self._chevron):
-            w.bind("<Enter>", lambda e: base.configure(border_color=palette.text_disabled), add="+")
-            w.bind("<Leave>", lambda e: base.configure(border_color=palette.border_strong), add="+")
+            w.bind("<Enter>", lambda e: base.configure(border_color=palette.border_input_hover), add="+")
+            w.bind("<Leave>", lambda e: base.configure(border_color=palette.border_input), add="+")
 
     def _open(self) -> None:
         menu = PopupMenu(self, self._p, min_width=max(160, self.winfo_width() - 12))

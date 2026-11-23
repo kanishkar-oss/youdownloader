@@ -58,7 +58,7 @@ class _Height:
     button_lg: int = 48
     progress: int = 6
     queue_row: int = 60
-    header: int = 132
+    header: int = 96
 
 
 # Content never stretches wider than this, so wide/maximized windows keep a

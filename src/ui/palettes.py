@@ -22,16 +22,22 @@ class Palette:
     surface_raised: str   # inputs, queue rows, menus
     surface_hover: str    # hover on raised elements
     border_subtle: str    # card hairlines
-    border_strong: str    # input borders, secondary buttons
+    border_strong: str    # popup outlines, scrollbars
+    border_input: str     # input / control edges (3:1 against cards)
+    border_input_hover: str
 
     text_primary: str
     text_secondary: str
-    text_disabled: str
+    text_tertiary: str    # labels, placeholders, hints (4.5:1 on cards and inputs)
+    text_disabled: str    # genuinely disabled text only
 
     accent: str
     accent_hover: str
     accent_pressed: str
     accent_subtle: str    # tinted fills (selected chips, banners)
+    accent_fill: str      # filled controls with white text (4.5:1+)
+    accent_fill_hover: str
+    accent_fill_pressed: str
     on_accent: str        # text on accent fills
 
     starlight: str        # cyan secondary — header glow, focus details
@@ -53,13 +59,19 @@ SPACE = Palette(
     surface_hover="#181C2A",
     border_subtle="#171A26",
     border_strong="#262B3D",
+    border_input="#565E80",
+    border_input_hover="#6E7699",
     text_primary="#EDEFF7",
     text_secondary="#9197AD",
+    text_tertiary="#7E849E",
     text_disabled="#555B72",
     accent="#7B6CF6",
     accent_hover="#8F82FF",
     accent_pressed="#6556DE",
     accent_subtle="#17152E",
+    accent_fill="#6556DE",
+    accent_fill_hover="#6C5DE6",
+    accent_fill_pressed="#5A4BD0",
     on_accent="#FFFFFF",
     starlight="#6FE3EA",
     success="#45D6A0",
