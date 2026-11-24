@@ -1,5 +1,13 @@
 # Changelog - YouDownloader
 
+## Unreleased
+
+- **Intel Macs aren't built any more**: releases are for Windows and Apple Silicon
+  Macs. 5.2.0 is the last Intel build; an Intel copy no longer offers app updates
+  (Settings explains why) but still downloads yt-dlp's YouTube fixes by itself.
+- CI: the Mac check step no longer fails on a clean run with nothing to warn about
+  (that stopped 5.2.0's first build from publishing).
+
 ## Version 5.2.0 — one Downloads list, clearer design
 
 - **One Downloads list** replaces the status panel and the queue. **Download** adds

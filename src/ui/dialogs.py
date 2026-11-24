@@ -716,7 +716,10 @@ class SettingsDialog:
         from src.utils import app_update
         from src.version import __version__
         c = card("About & updates")
-        if app_update.can_self_install():
+        no_builds = app_update.unsupported_note() if paths.FROZEN else None
+        if no_builds:
+            about_desc = no_builds  # Intel Mac: no new versions are built
+        elif app_update.can_self_install():
             about_desc = "New versions are installed from GitHub releases."
         else:
             about_desc = "Running from source: update with git pull."
@@ -748,7 +751,8 @@ class SettingsDialog:
 
         check_btn = SecondaryButton(right, P, text="Check for updates", icon="refresh", width=176,
                                     height=HEIGHT.button_sm, command=check_now)
-        check_btn.pack()
+        if not no_builds:
+            check_btn.pack()
         divider(c)
         right, _ = row(c, "Check automatically", "Look for a new version each time the app opens.")
         switch(right, "auto_check_updates", True)

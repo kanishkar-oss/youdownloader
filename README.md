@@ -1,6 +1,6 @@
 # YouDownloader
 
-A modern YouTube downloader for **Windows and macOS** with a clean CustomTkinter GUI,
+A modern YouTube downloader for **Windows and Apple Silicon Macs** with a clean CustomTkinter GUI,
 built on yt-dlp. Installers for both, with built-in automatic updates.
 
 ## Features
@@ -88,13 +88,13 @@ there's nothing else to install.
 | --- | --- |
 | Windows 10 / 11 (64-bit) | [YouDownloader-windows-setup.exe](https://github.com/kanishkar-oss/youdownloader/releases/latest/download/YouDownloader-windows-setup.exe) |
 | Mac with Apple Silicon (M1 and newer), macOS 12+ | [YouDownloader-mac-apple-silicon.dmg](https://github.com/kanishkar-oss/youdownloader/releases/latest/download/YouDownloader-mac-apple-silicon.dmg) |
-| Mac with an Intel chip, macOS 12+ | [YouDownloader-mac-intel.dmg](https://github.com/kanishkar-oss/youdownloader/releases/latest/download/YouDownloader-mac-intel.dmg) |
 
 All versions and release notes are on the
 [Releases page](https://github.com/kanishkar-oss/youdownloader/releases).
 
-Not sure which Mac you have? Apple menu → About This Mac → "Chip" (Apple M…) or
-"Processor" (Intel).
+Not sure which Mac you have? Apple menu → About This Mac: "Chip: Apple M…" is Apple
+Silicon. Macs with an Intel processor aren't supported any more: 5.2.0 is the last
+Intel build (on the Releases page), and it gets YouTube fixes but no new versions.
 
 **Windows:** run the installer. It installs just for you (no admin prompt) and
 adds a Start Menu shortcut. The builds aren't code-signed yet, so SmartScreen
@@ -137,7 +137,7 @@ offers the download page. Update logs: `~/Library/Logs/YouDownloader/update.log`
 ## Releasing updates (maintainer)
 
 Every release is built by GitHub Actions (`.github/workflows/release.yml`) on
-Windows, Apple Silicon and Intel runners and published as a GitHub Release,
+Windows and Apple Silicon runners and published as a GitHub Release,
 which installed copies pick up on their next launch. From your machine:
 
 ```powershell

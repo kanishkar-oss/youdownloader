@@ -1,4 +1,4 @@
-# Builds YouDownloader for Windows, Apple Silicon Macs and Intel Macs.
+# Builds YouDownloader for Windows and Apple Silicon Macs (Intel Macs aren't built since 5.2.0).
 #
 # - Push a tag vX.Y.Z (scripts/release.ps1 or release.sh does it) → builds all
 #   three and publishes a GitHub Release with the installers. Installed copies
@@ -30,8 +30,6 @@ jobs:
             label: windows
           - os: macos-latest      # Apple Silicon (arm64)
             label: mac-apple-silicon
-          - os: macos-15-intel    # Intel (x86_64)
-            label: mac-intel
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
@@ -154,7 +152,7 @@ jobs:
         run: |
           cd dist
           v="${GITHUB_REF_NAME#v}"
-          for f in YouDownloader-"$v"-windows-setup.exe YouDownloader-"$v"-mac-apple-silicon.dmg YouDownloader-"$v"-mac-intel.dmg; do
+          for f in YouDownloader-"$v"-windows-setup.exe YouDownloader-"$v"-mac-apple-silicon.dmg; do
             cp "$f" "${f/-$v/}"
           done
           ls -la

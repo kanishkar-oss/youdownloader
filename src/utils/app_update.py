@@ -18,8 +18,9 @@ Flow used by the UI: check() -> download() -> prepare() (slow; worker thread)
 Asset names (made by .github/workflows/release.yml):
     YouDownloader-<ver>-windows-setup.exe
     YouDownloader-<ver>-mac-apple-silicon.zip / .dmg
-    YouDownloader-<ver>-mac-intel.zip / .dmg
     SHA256SUMS.txt
+(Intel Mac builds stopped after 5.2.0: an Intel copy reports no app updates;
+its yt-dlp still updates itself.)
 """
 import hashlib
 import os
@@ -98,12 +99,24 @@ def mac_arch() -> str:
     return "apple-silicon"
 
 
+INTEL_MAC_NOTE = ("New versions of YouDownloader are built for Apple Silicon Macs and Windows only, "
+                  "so this Intel Mac stays on {version}. YouTube fixes (yt-dlp) still arrive by themselves.")
+
+
+def unsupported_note() -> Optional[str]:
+    """Why this Mac gets no new versions (Intel builds stopped after 5.2.0), or None."""
+    if paths.IS_MAC and mac_arch() == "intel":
+        return INTEL_MAC_NOTE.format(version=__version__)
+    return None
+
+
 def asset_suffix() -> Optional[str]:
-    """The release file this platform installs, by name suffix."""
+    """The release file this platform installs, by name suffix (None: no builds for it)."""
     if paths.IS_WINDOWS:
         return "-windows-setup.exe"
     if paths.IS_MAC:
-        return f"-mac-{mac_arch()}.zip"
+        arch = mac_arch()
+        return None if arch == "intel" else f"-mac-{arch}.zip"
     return None
 
 
@@ -139,6 +152,9 @@ def install_blocker() -> Optional[str]:
         return None
     if not paths.IS_MAC:
         return "Automatic updates aren't supported on this system."
+    note = unsupported_note()
+    if note:
+        return note
     bundle = current_app_bundle()
     if not bundle:
         return "Couldn't find the running YouDownloader.app."

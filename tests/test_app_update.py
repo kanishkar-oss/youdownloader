@@ -67,6 +67,19 @@ class TestRateLimitFallback(unittest.TestCase):
         self.assertEqual(rel.version, "99.0.0")
         self.assertIsNone(rel.asset_url)  # dialog falls back to "Open download page"
 
+    def test_intel_mac_gets_no_app_updates(self):
+        # Intel Mac builds stopped after 5.2.0: nothing to install, and a reason to show.
+        with mock.patch.object(u.paths, "IS_WINDOWS", False), mock.patch.object(u.paths, "IS_MAC", True), \
+                mock.patch.object(u.paths, "FROZEN", True), mock.patch.object(u, "mac_arch", return_value="intel"):
+            self.assertIsNone(u.asset_suffix())
+            self.assertFalse(u.can_self_install())
+            self.assertIn("Apple Silicon", u.unsupported_note())
+            self.assertEqual(u.install_blocker(), u.unsupported_note())
+        with mock.patch.object(u.paths, "IS_WINDOWS", False), mock.patch.object(u.paths, "IS_MAC", True), \
+                mock.patch.object(u, "mac_arch", return_value="apple-silicon"):
+            self.assertEqual(u.asset_suffix(), "-mac-apple-silicon.zip")
+            self.assertIsNone(u.unsupported_note())
+
     def test_no_releases_yet(self):
         def get(url, **kw):
             if url == u.LATEST_URL:

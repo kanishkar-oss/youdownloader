@@ -6,7 +6,7 @@ Windows → dist/release/YouDownloader-<ver>-windows-setup.exe  (Inno Setup)
 macOS   → dist/release/YouDownloader-<ver>-mac-<arch>.dmg      (drag to Applications)
           dist/release/YouDownloader-<ver>-mac-<arch>.zip      (used by the in-app updater)
 
-GitHub Actions runs this on Windows, Apple Silicon and Intel runners for every
+GitHub Actions runs this on Windows and Apple Silicon runners for every
 release tag (.github/workflows/release.yml). Needs: pip install -r
 requirements.txt -r requirements-build.txt, plus Inno Setup 6 on Windows.
 """
